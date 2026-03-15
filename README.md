@@ -2,6 +2,8 @@
 
 A modified version of the [Obsidian Calendar Plugin](https://github.com/liamcain/obsidian-calendar-plugin) that reads from a single master planner file instead of individual daily notes.
 
+![screenshot-full](https://github.com/LykAunn/CalendarPlanner/blob/main/images/Screenshot.png)
+
 ## Features
 
 - **Single Planner File**: All your tasks and events in one `planner.md` file
@@ -67,6 +69,8 @@ Just plain text (treated as a note)
 - Add new entries directly from the modal
 - Click checkboxes to mark tasks complete
 
+![screenshot-full](https://github.com/LykAunn/CalendarPlanner/blob/main/images/day_interaction.png)
+
 ### Day Modal Features
 
 - View all entries for the selected day
@@ -94,6 +98,8 @@ Available in the command palette (Ctrl/Cmd + P):
 - **Open calendar planner** - Opens the calendar view
 - **Open planner file** - Opens your planner.md directly
 - **Add entry for today** - Quick add via modal
+
+![screenshot-full](https://github.com/LykAunn/CalendarPlanner/blob/main/images/command_palette.png)
 
 ## Calendar Display
 
