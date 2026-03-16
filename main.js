@@ -849,7 +849,7 @@ class PlannerDayModal extends obsidian.Modal {
             });
         }
         
-        // Add new task input
+        // Add new task input at bottom
         const inputContainer = contentEl.createDiv({ cls: "planner-input-container" });
         const input = inputContainer.createEl("input", {
             type: "text",
@@ -860,13 +860,6 @@ class PlannerDayModal extends obsidian.Modal {
         const addButton = inputContainer.createEl("button", { 
             text: "Add",
             cls: "planner-add-button"
-        });
-        
-        // Handle mobile keyboard - scroll input into view when focused
-        input.addEventListener("focus", () => {
-            setTimeout(() => {
-                input.scrollIntoView({ behavior: "smooth", block: "center" });
-            }, 300); // Delay to allow keyboard to appear
         });
         
         const addTask = async () => {
@@ -926,6 +919,18 @@ class PlannerDayModal extends obsidian.Modal {
             }
             .modal.mod-planner {
                 max-height: 80vh;
+            }
+            /* iOS keyboard handling */
+            .modal.keyboard-open {
+                position: fixed !important;
+                top: 10% !important;
+                bottom: auto !important;
+                transform: none !important;
+                max-height: 40vh !important;
+            }
+            .modal.keyboard-open .modal-content {
+                max-height: 35vh !important;
+                overflow-y: auto !important;
             }
             @media screen and (max-width: 768px) {
                 .planner-day-modal {
@@ -1049,25 +1054,28 @@ class PlannerDayModal extends obsidian.Modal {
     }
 
     setupMobileKeyboardHandler() {
-        // Use visualViewport API to detect keyboard on mobile
+        const modal = this.containerEl;
+        
+        // Use visualViewport API for more reliable keyboard detection
         if (window.visualViewport) {
-            const modal = this.containerEl;
-            
             this.viewportHandler = () => {
                 const viewport = window.visualViewport;
                 const keyboardHeight = window.innerHeight - viewport.height;
                 
-                if (keyboardHeight > 100) {
-                    // Keyboard is likely visible
-                    modal.style.transform = `translateY(${-keyboardHeight / 2}px)`;
-                    modal.style.transition = 'transform 0.2s ease-out';
+                if (keyboardHeight > 150) {
+                    // Keyboard is visible - add class and transform
+                    modal.addClass("keyboard-open");
+                    modal.style.transform = `translateY(${-keyboardHeight * 0.4}px)`;
+                    modal.style.transition = 'transform 0.25s ease-out';
                 } else {
                     // Keyboard is hidden
+                    modal.removeClass("keyboard-open");
                     modal.style.transform = '';
                 }
             };
             
             window.visualViewport.addEventListener('resize', this.viewportHandler);
+            window.visualViewport.addEventListener('scroll', this.viewportHandler);
         }
     }
 
@@ -1078,10 +1086,12 @@ class PlannerDayModal extends obsidian.Modal {
         // Clean up viewport handler
         if (this.viewportHandler && window.visualViewport) {
             window.visualViewport.removeEventListener('resize', this.viewportHandler);
+            window.visualViewport.removeEventListener('scroll', this.viewportHandler);
             this.viewportHandler = null;
         }
         
-        // Reset modal transform
+        // Reset modal transform and classes
+        this.containerEl.removeClass("keyboard-open");
         this.containerEl.style.transform = '';
     }
 }
