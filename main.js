@@ -791,6 +791,9 @@ class PlannerDayModal extends obsidian.Modal {
         contentEl.empty();
         contentEl.addClass('planner-day-modal');
         
+        // Add class to modal container for CSS targeting
+        this.containerEl.addClass('planner-modal-container');
+        
         // Add modal styles
         this.addStyles();
         
@@ -917,12 +920,21 @@ class PlannerDayModal extends obsidian.Modal {
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
             }
+            /* Ensure modal container covers full screen */
+            .planner-modal-container {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+            }
             /* Mobile: position modal at top so keyboard doesn't cover it */
             @media screen and (max-width: 768px), (pointer: coarse) {
-                .modal:has(.planner-day-modal) {
-                    top: 2% !important;
+                .planner-modal-container .modal {
+                    top: 5% !important;
                     bottom: auto !important;
-                    transform: translateX(-50%) !important;
                     max-height: 50vh !important;
                 }
                 .planner-day-modal {
@@ -1047,34 +1059,16 @@ class PlannerDayModal extends obsidian.Modal {
     }
 
     setupMobileKeyboardHandler() {
-        const modal = this.containerEl;
-        
-        // Detect mobile/tablet and position modal at top
-        const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || 
-                         (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
-        
-        if (isMobile) {
-            // Position modal at top of screen on mobile
-            modal.style.position = 'fixed';
-            modal.style.top = '2%';
-            modal.style.left = '50%';
-            modal.style.transform = 'translateX(-50%)';
-            modal.style.bottom = 'auto';
-            modal.style.maxHeight = '50vh';
-            this.contentEl.style.maxHeight = '45vh';
-            this.contentEl.style.overflowY = 'auto';
-        }
+        // Mobile positioning is handled by CSS media queries
+        // This function exists for potential future keyboard detection
     }
 
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
         
-        // Reset modal styles
-        this.containerEl.removeClass("keyboard-open");
-        this.containerEl.style.cssText = '';
-        contentEl.style.maxHeight = '';
-        contentEl.style.overflowY = '';
+        // Remove custom class
+        this.containerEl.removeClass("planner-modal-container");
     }
 }
 
@@ -3796,6 +3790,7 @@ class CalendarView extends obsidian.ItemView {
     constructor(leaf) {
         super(leaf);
         this.parser = getPlannerParser(this.app);
+        this.activeModal = null;
         
         this.openPlannerDay = this.openPlannerDay.bind(this);
         this.onFileModified = this.onFileModified.bind(this);
@@ -3979,12 +3974,19 @@ class CalendarView extends obsidian.ItemView {
     }
 
     async openPlannerDay(date, inNewSplit) {
+        // Close any existing modal first
+        if (this.activeModal) {
+            this.activeModal.close();
+            this.activeModal = null;
+        }
+        
         const modal = new PlannerDayModal(
             this.app, 
             date, 
             this.parser, 
             () => this.refreshCalendar()
         );
+        this.activeModal = modal;
         modal.open();
         activeFile.setDate(date);
     }
