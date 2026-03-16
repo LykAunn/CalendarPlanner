@@ -913,35 +913,21 @@ class PlannerDayModal extends obsidian.Modal {
         styleEl.textContent = `
             .planner-day-modal {
                 padding: 10px;
-                padding-bottom: calc(10px + env(keyboard-inset-bottom, 0px));
                 max-height: 70vh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
             }
-            .modal.mod-planner {
-                max-height: 80vh;
-            }
-            /* iOS keyboard handling using env() */
-            @supports (padding-bottom: env(keyboard-inset-bottom)) {
-                .modal-container.planner-modal-container {
-                    bottom: env(keyboard-inset-bottom, 0px);
-                    transition: bottom 0.25s ease-out;
+            /* Mobile: position modal at top so keyboard doesn't cover it */
+            @media screen and (max-width: 768px), (pointer: coarse) {
+                .modal:has(.planner-day-modal) {
+                    top: 2% !important;
+                    bottom: auto !important;
+                    transform: translateX(-50%) !important;
+                    max-height: 50vh !important;
                 }
-            }
-            /* Fallback keyboard handling */
-            .modal.keyboard-open {
-                position: fixed !important;
-                top: 5% !important;
-                bottom: auto !important;
-                max-height: 45vh !important;
-            }
-            .modal.keyboard-open .planner-day-modal {
-                max-height: 40vh !important;
-                overflow-y: auto !important;
-            }
-            @media screen and (max-width: 768px) {
                 .planner-day-modal {
-                    padding-bottom: calc(20px + env(keyboard-inset-bottom, 0px));
+                    max-height: 45vh;
+                    padding-bottom: 20px;
                 }
             }
             .planner-day-modal h2 {
@@ -1062,52 +1048,21 @@ class PlannerDayModal extends obsidian.Modal {
 
     setupMobileKeyboardHandler() {
         const modal = this.containerEl;
-        const modalContent = this.contentEl;
         
-        // Try Virtual Keyboard API (newest approach)
-        if ('virtualKeyboard' in navigator) {
-            navigator.virtualKeyboard.overlaysContent = true;
-            navigator.virtualKeyboard.addEventListener('geometrychange', () => {
-                const { height } = navigator.virtualKeyboard.boundingRect;
-                if (height > 0) {
-                    modal.style.transform = `translateY(-${height * 0.5}px)`;
-                } else {
-                    modal.style.transform = '';
-                }
-            });
-            return;
-        }
+        // Detect mobile/tablet and position modal at top
+        const isMobile = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) || 
+                         (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
         
-        // Fallback: Use focusin/focusout with fixed positioning
-        const inputEl = modalContent.querySelector('.planner-new-task-input');
-        if (inputEl) {
-            let originalPosition = null;
-            
-            inputEl.addEventListener('focus', () => {
-                // Store original position
-                originalPosition = modal.style.cssText;
-                
-                // Move modal to top of screen
-                setTimeout(() => {
-                    modal.style.position = 'fixed';
-                    modal.style.top = '5%';
-                    modal.style.left = '50%';
-                    modal.style.transform = 'translateX(-50%)';
-                    modal.style.bottom = 'auto';
-                    modal.style.maxHeight = '45vh';
-                    modalContent.style.maxHeight = '40vh';
-                    modalContent.style.overflowY = 'auto';
-                }, 100);
-            });
-            
-            inputEl.addEventListener('blur', () => {
-                // Restore original position
-                setTimeout(() => {
-                    modal.style.cssText = originalPosition || '';
-                    modalContent.style.maxHeight = '';
-                    modalContent.style.overflowY = '';
-                }, 100);
-            });
+        if (isMobile) {
+            // Position modal at top of screen on mobile
+            modal.style.position = 'fixed';
+            modal.style.top = '2%';
+            modal.style.left = '50%';
+            modal.style.transform = 'translateX(-50%)';
+            modal.style.bottom = 'auto';
+            modal.style.maxHeight = '50vh';
+            this.contentEl.style.maxHeight = '45vh';
+            this.contentEl.style.overflowY = 'auto';
         }
     }
 
