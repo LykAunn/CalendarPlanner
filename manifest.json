@@ -2,7 +2,7 @@
   "id": "calendarplanner",
   "name": "CalendarPlanner",
   "description": "Calendar Planner that reads from a master file to plan ahead",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Lyk Aunn Liu",
   "authorUrl": "https://github.com/LykAunn/",
   "isDesktopOnly": false,
