@@ -913,6 +913,7 @@ class PlannerDayModal extends obsidian.Modal {
         styleEl.textContent = `
             .planner-day-modal {
                 padding: 10px;
+                padding-bottom: calc(10px + env(keyboard-inset-bottom, 0px));
                 max-height: 70vh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
@@ -920,21 +921,27 @@ class PlannerDayModal extends obsidian.Modal {
             .modal.mod-planner {
                 max-height: 80vh;
             }
-            /* iOS keyboard handling */
+            /* iOS keyboard handling using env() */
+            @supports (padding-bottom: env(keyboard-inset-bottom)) {
+                .modal-container.planner-modal-container {
+                    bottom: env(keyboard-inset-bottom, 0px);
+                    transition: bottom 0.25s ease-out;
+                }
+            }
+            /* Fallback keyboard handling */
             .modal.keyboard-open {
                 position: fixed !important;
-                top: 10% !important;
+                top: 5% !important;
                 bottom: auto !important;
-                transform: none !important;
-                max-height: 40vh !important;
+                max-height: 45vh !important;
             }
-            .modal.keyboard-open .modal-content {
-                max-height: 35vh !important;
+            .modal.keyboard-open .planner-day-modal {
+                max-height: 40vh !important;
                 overflow-y: auto !important;
             }
             @media screen and (max-width: 768px) {
                 .planner-day-modal {
-                    padding-bottom: 20px;
+                    padding-bottom: calc(20px + env(keyboard-inset-bottom, 0px));
                 }
             }
             .planner-day-modal h2 {
@@ -1055,27 +1062,52 @@ class PlannerDayModal extends obsidian.Modal {
 
     setupMobileKeyboardHandler() {
         const modal = this.containerEl;
+        const modalContent = this.contentEl;
         
-        // Use visualViewport API for more reliable keyboard detection
-        if (window.visualViewport) {
-            this.viewportHandler = () => {
-                const viewport = window.visualViewport;
-                const keyboardHeight = window.innerHeight - viewport.height;
-                
-                if (keyboardHeight > 150) {
-                    // Keyboard is visible - add class and transform
-                    modal.addClass("keyboard-open");
-                    modal.style.transform = `translateY(${-keyboardHeight * 0.4}px)`;
-                    modal.style.transition = 'transform 0.25s ease-out';
+        // Try Virtual Keyboard API (newest approach)
+        if ('virtualKeyboard' in navigator) {
+            navigator.virtualKeyboard.overlaysContent = true;
+            navigator.virtualKeyboard.addEventListener('geometrychange', () => {
+                const { height } = navigator.virtualKeyboard.boundingRect;
+                if (height > 0) {
+                    modal.style.transform = `translateY(-${height * 0.5}px)`;
                 } else {
-                    // Keyboard is hidden
-                    modal.removeClass("keyboard-open");
                     modal.style.transform = '';
                 }
-            };
+            });
+            return;
+        }
+        
+        // Fallback: Use focusin/focusout with fixed positioning
+        const inputEl = modalContent.querySelector('.planner-new-task-input');
+        if (inputEl) {
+            let originalPosition = null;
             
-            window.visualViewport.addEventListener('resize', this.viewportHandler);
-            window.visualViewport.addEventListener('scroll', this.viewportHandler);
+            inputEl.addEventListener('focus', () => {
+                // Store original position
+                originalPosition = modal.style.cssText;
+                
+                // Move modal to top of screen
+                setTimeout(() => {
+                    modal.style.position = 'fixed';
+                    modal.style.top = '5%';
+                    modal.style.left = '50%';
+                    modal.style.transform = 'translateX(-50%)';
+                    modal.style.bottom = 'auto';
+                    modal.style.maxHeight = '45vh';
+                    modalContent.style.maxHeight = '40vh';
+                    modalContent.style.overflowY = 'auto';
+                }, 100);
+            });
+            
+            inputEl.addEventListener('blur', () => {
+                // Restore original position
+                setTimeout(() => {
+                    modal.style.cssText = originalPosition || '';
+                    modalContent.style.maxHeight = '';
+                    modalContent.style.overflowY = '';
+                }, 100);
+            });
         }
     }
 
@@ -1083,16 +1115,11 @@ class PlannerDayModal extends obsidian.Modal {
         const { contentEl } = this;
         contentEl.empty();
         
-        // Clean up viewport handler
-        if (this.viewportHandler && window.visualViewport) {
-            window.visualViewport.removeEventListener('resize', this.viewportHandler);
-            window.visualViewport.removeEventListener('scroll', this.viewportHandler);
-            this.viewportHandler = null;
-        }
-        
-        // Reset modal transform and classes
+        // Reset modal styles
         this.containerEl.removeClass("keyboard-open");
-        this.containerEl.style.transform = '';
+        this.containerEl.style.cssText = '';
+        contentEl.style.maxHeight = '';
+        contentEl.style.overflowY = '';
     }
 }
 
