@@ -781,6 +781,7 @@ class PlannerDayModal extends obsidian.Modal {
         this.date = date;
         this.parser = parser;
         this.onUpdate = onUpdate;
+        this.viewportHandler = null;
     }
 
     onOpen() {
@@ -792,6 +793,9 @@ class PlannerDayModal extends obsidian.Modal {
         
         // Add modal styles
         this.addStyles();
+        
+        // Handle mobile keyboard resize
+        this.setupMobileKeyboardHandler();
         
         const dateStr = moment(this.date).format("dddd, MMMM D, YYYY");
         contentEl.createEl("h2", { text: dateStr });
@@ -858,6 +862,13 @@ class PlannerDayModal extends obsidian.Modal {
             cls: "planner-add-button"
         });
         
+        // Handle mobile keyboard - scroll input into view when focused
+        input.addEventListener("focus", () => {
+            setTimeout(() => {
+                input.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 300); // Delay to allow keyboard to appear
+        });
+        
         const addTask = async () => {
             const text = input.value.trim();
             if (text) {
@@ -909,6 +920,17 @@ class PlannerDayModal extends obsidian.Modal {
         styleEl.textContent = `
             .planner-day-modal {
                 padding: 10px;
+                max-height: 70vh;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .modal.mod-planner {
+                max-height: 80vh;
+            }
+            @media screen and (max-width: 768px) {
+                .planner-day-modal {
+                    padding-bottom: 20px;
+                }
             }
             .planner-day-modal h2 {
                 margin-top: 0;
@@ -1026,9 +1048,41 @@ class PlannerDayModal extends obsidian.Modal {
         document.head.appendChild(styleEl);
     }
 
+    setupMobileKeyboardHandler() {
+        // Use visualViewport API to detect keyboard on mobile
+        if (window.visualViewport) {
+            const modal = this.containerEl;
+            
+            this.viewportHandler = () => {
+                const viewport = window.visualViewport;
+                const keyboardHeight = window.innerHeight - viewport.height;
+                
+                if (keyboardHeight > 100) {
+                    // Keyboard is likely visible
+                    modal.style.transform = `translateY(${-keyboardHeight / 2}px)`;
+                    modal.style.transition = 'transform 0.2s ease-out';
+                } else {
+                    // Keyboard is hidden
+                    modal.style.transform = '';
+                }
+            };
+            
+            window.visualViewport.addEventListener('resize', this.viewportHandler);
+        }
+    }
+
     onClose() {
         const { contentEl } = this;
         contentEl.empty();
+        
+        // Clean up viewport handler
+        if (this.viewportHandler && window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', this.viewportHandler);
+            this.viewportHandler = null;
+        }
+        
+        // Reset modal transform
+        this.containerEl.style.transform = '';
     }
 }
 
