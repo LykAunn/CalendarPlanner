@@ -930,17 +930,18 @@ class PlannerDayModal extends obsidian.Modal {
                 width: 100% !important;
                 height: 100% !important;
             }
-            /* Mobile: position modal at top so keyboard doesn't cover it */
-            @media screen and (max-width: 768px), (pointer: coarse) {
-                .planner-modal-container .modal {
-                    top: 5% !important;
-                    bottom: auto !important;
-                    max-height: 50vh !important;
-                }
-                .planner-day-modal {
-                    max-height: 45vh;
-                    padding-bottom: 20px;
-                }
+            /* Position modal at top, horizontally centered */
+            .planner-modal-container .modal {
+                position: absolute !important;
+                top: 5% !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                bottom: auto !important;
+                max-height: 50vh !important;
+            }
+            .planner-day-modal {
+                max-height: 45vh;
+                padding-bottom: 20px;
             }
             .planner-day-modal h2 {
                 margin-top: 0;
