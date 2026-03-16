@@ -98,16 +98,20 @@ class PlannerParser {
                 // Parse task lines - handle multiple formats:
                 // - [x] task, - [ ] task, * [x] task, 1) [x] task, [x] task, 1) task, - task
                 
-                // Check if line contains a checkbox
-                const checkboxMatch = line.match(/^\s*(?:[-*]|\d+\))?\s*\[([ xX])\]\s*(.+)$/);
-                if (checkboxMatch) {
-                    const isCompleted = checkboxMatch[1].toLowerCase() === 'x';
-                    const taskText = checkboxMatch[2].trim();
-                    currentTasks.push({
-                        text: taskText,
-                        completed: isCompleted,
-                        line: i
-                    });
+                // First, check if line contains a checkbox anywhere
+                const hasCheckbox = /\[([ xX])\]/.exec(line);
+                
+                if (hasCheckbox) {
+                    const isCompleted = hasCheckbox[1].toLowerCase() === 'x';
+                    // Extract text after the checkbox
+                    const textAfterCheckbox = line.substring(line.indexOf(']') + 1).trim();
+                    if (textAfterCheckbox) {
+                        currentTasks.push({
+                            text: textAfterCheckbox,
+                            completed: isCompleted,
+                            line: i
+                        });
+                    }
                 } else {
                     // Check for numbered list or bullet without checkbox
                     const listMatch = line.match(/^\s*(?:(\d+)\)|[-*])\s+(.+)$/);
@@ -240,12 +244,16 @@ class PlannerParser {
         const line = lines[task.line];
         let newLine;
         
-        if (/^\s*\[[ ]\]/.test(line)) {
+        // Check for incomplete checkbox: [ ] -> [x]
+        if (/\[[ ]\]/.test(line)) {
             newLine = line.replace(/\[[ ]\]/, '[x]');
-        } else if (/^\s*\[[xX]\]/.test(line)) {
+        }
+        // Check for completed checkbox: [x] -> [ ]
+        else if (/\[[xX]\]/.test(line)) {
             newLine = line.replace(/\[[xX]\]/, '[ ]');
-        } else {
-            // Convert numbered/bullet list to checkbox
+        }
+        // Convert numbered/bullet list to checkbox
+        else {
             newLine = line.replace(/^(\s*)(?:(\d+)\)|[-*])\s*/, '$1- [x] ');
         }
         
@@ -803,10 +811,15 @@ class PlannerDayModal extends obsidian.Modal {
                     const taskEl = taskList.createEl("li", { cls: "planner-task" });
                     
                     if (task.completed) {
-                        // Show a non-clickable checkmark for completed tasks
+                        // Show clickable checkmark for completed tasks
                         const checkmark = taskEl.createEl("span", { 
-                            cls: "planner-checkmark",
+                            cls: "planner-checkmark clickable",
                             text: "✓"
+                        });
+                        checkmark.addEventListener("click", async () => {
+                            await this.parser.toggleTaskCompletion(this.date, index);
+                            this.onUpdate();
+                            this.onOpen(); // Refresh the modal
                         });
                     } else {
                         // Show clickable checkbox for incomplete tasks
@@ -917,12 +930,15 @@ class PlannerDayModal extends obsidian.Modal {
                 border-bottom: none;
             }
             .planner-task-list input[type="checkbox"] {
-                width: 18px;
-                height: 18px;
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+                min-height: 24px;
                 margin: 0;
                 cursor: pointer;
                 accent-color: var(--interactive-accent);
                 flex-shrink: 0;
+                -webkit-tap-highlight-color: transparent;
             }
             .planner-task-list .completed {
                 text-decoration: line-through;
@@ -932,14 +948,27 @@ class PlannerDayModal extends obsidian.Modal {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 18px;
-                height: 18px;
+                width: 24px;
+                height: 24px;
+                min-width: 24px;
+                min-height: 24px;
                 background: var(--interactive-accent);
                 color: var(--text-on-accent);
                 border-radius: 4px;
-                font-size: 12px;
+                font-size: 14px;
                 font-weight: bold;
                 flex-shrink: 0;
+                -webkit-tap-highlight-color: transparent;
+            }
+            .planner-checkmark.clickable {
+                cursor: pointer;
+                transition: opacity 0.15s ease, transform 0.1s ease;
+            }
+            .planner-checkmark.clickable:hover {
+                opacity: 0.8;
+            }
+            .planner-checkmark.clickable:active {
+                transform: scale(0.95);
             }
             .planner-note {
                 font-style: italic;
