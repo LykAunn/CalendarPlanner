@@ -916,32 +916,8 @@ class PlannerDayModal extends obsidian.Modal {
         styleEl.textContent = `
             .planner-day-modal {
                 padding: 10px;
-                max-height: 70vh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
-            }
-            /* Ensure modal container covers full screen */
-            .planner-modal-container {
-                position: fixed !important;
-                top: 0 !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
-            }
-            /* Position modal at top, horizontally centered */
-            .planner-modal-container .modal {
-                position: absolute !important;
-                top: 5% !important;
-                left: 50% !important;
-                transform: translateX(-50%) !important;
-                bottom: auto !important;
-                max-height: 50vh !important;
-            }
-            .planner-day-modal {
-                max-height: 45vh;
-                padding-bottom: 20px;
             }
             .planner-day-modal h2 {
                 margin-top: 0;
@@ -1060,8 +1036,19 @@ class PlannerDayModal extends obsidian.Modal {
     }
 
     setupMobileKeyboardHandler() {
-        // Mobile positioning is handled by CSS media queries
-        // This function exists for potential future keyboard detection
+        // Position modal at top via JS to override Obsidian defaults
+        // modalEl is the actual modal element in Obsidian's Modal class
+        this.modalEl.style.position = 'absolute';
+        this.modalEl.style.top = '5%';
+        this.modalEl.style.left = '50%';
+        this.modalEl.style.right = 'auto';
+        this.modalEl.style.bottom = 'auto';
+        this.modalEl.style.transform = 'translateX(-50%)';
+        this.modalEl.style.margin = '0';
+        this.modalEl.style.maxHeight = '50vh';
+        
+        this.contentEl.style.maxHeight = '45vh';
+        this.contentEl.style.overflowY = 'auto';
     }
 
     onClose() {
