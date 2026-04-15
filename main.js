@@ -22,6 +22,7 @@ class PlannerParser {
     constructor(app) {
         this.app = app;
         this.plannerData = {};
+        this.rangeEntries = []; // Entries that span multiple days
         this.plannerPath = DEFAULT_PLANNER_PATH;
     }
 
@@ -36,6 +37,7 @@ class PlannerParser {
         if (!plannerFile || !(plannerFile instanceof obsidian__default['default'].TFile)) {
             console.log("[Calendar] Planner file not found:", this.plannerPath);
             this.plannerData = {};
+            this.rangeEntries = [];
             return this.plannerData;
         }
 
@@ -46,12 +48,51 @@ class PlannerParser {
         } catch (err) {
             console.error("[Calendar] Failed to read planner file:", err);
             this.plannerData = {};
+            this.rangeEntries = [];
             return this.plannerData;
         }
     }
 
+    // Parse date range from text like [13/03 - 15/03] or [13/03/2026 - 15/03/2026]
+    parseDateRange(text, contextYear) {
+        const { moment } = window;
+        
+        // Match patterns: [DD/MM - DD/MM] or [DD/MM/YYYY - DD/MM/YYYY]
+        const rangeMatch = text.match(/\[(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\s*[-–]\s*(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\]/);
+        
+        if (!rangeMatch) return null;
+        
+        let fromStr = rangeMatch[1];
+        let toStr = rangeMatch[2];
+        
+        // Add year if not present
+        if (!fromStr.match(/\/\d{4}$/)) {
+            fromStr += `/${contextYear}`;
+        }
+        if (!toStr.match(/\/\d{4}$/)) {
+            toStr += `/${contextYear}`;
+        }
+        
+        const fromDate = moment(fromStr, "DD/MM/YYYY", true);
+        const toDate = moment(toStr, "DD/MM/YYYY", true);
+        
+        if (!fromDate.isValid() || !toDate.isValid()) return null;
+        
+        // Extract text without the date range
+        const cleanText = text.replace(/\[(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\s*[-–]\s*(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\]/, '').trim();
+        
+        return {
+            fromDate: fromDate.format("YYYY-MM-DD"),
+            toDate: toDate.format("YYYY-MM-DD"),
+            text: cleanText,
+            originalText: text
+        };
+    }
+
     parseContent(content) {
+        const { moment } = window;
         const data = {};
+        this.rangeEntries = [];
         const lines = content.split('\n');
         
         // Match date patterns like **13/03/2026** or ## 13/03/2026 or ### 2026-03-13
@@ -106,20 +147,57 @@ class PlannerParser {
                     // Extract text after the checkbox
                     const textAfterCheckbox = line.substring(line.indexOf(']') + 1).trim();
                     if (textAfterCheckbox) {
+                        // Check for date range in the text
+                        const contextYear = moment(currentDate, "YYYY-MM-DD").year();
+                        const dateRange = this.parseDateRange(textAfterCheckbox, contextYear);
+                        
+                        if (dateRange) {
+                            // This is a range entry
+                            this.rangeEntries.push({
+                                text: dateRange.text,
+                                fromDate: dateRange.fromDate,
+                                toDate: dateRange.toDate,
+                                completed: isCompleted,
+                                line: i,
+                                sourceDate: currentDate
+                            });
+                        }
+                        
                         currentTasks.push({
-                            text: textAfterCheckbox,
+                            text: dateRange ? dateRange.text : textAfterCheckbox,
                             completed: isCompleted,
-                            line: i
+                            line: i,
+                            hasRange: !!dateRange,
+                            fromDate: dateRange ? dateRange.fromDate : null,
+                            toDate: dateRange ? dateRange.toDate : null
                         });
                     }
                 } else {
                     // Check for numbered list or bullet without checkbox
                     const listMatch = line.match(/^\s*(?:(\d+)\)|[-*])\s+(.+)$/);
                     if (listMatch) {
+                        const taskText = listMatch[2].trim();
+                        const contextYear = moment(currentDate, "YYYY-MM-DD").year();
+                        const dateRange = this.parseDateRange(taskText, contextYear);
+                        
+                        if (dateRange) {
+                            this.rangeEntries.push({
+                                text: dateRange.text,
+                                fromDate: dateRange.fromDate,
+                                toDate: dateRange.toDate,
+                                completed: false,
+                                line: i,
+                                sourceDate: currentDate
+                            });
+                        }
+                        
                         currentTasks.push({
-                            text: listMatch[2].trim(),
+                            text: dateRange ? dateRange.text : taskText,
                             completed: false,
-                            line: i
+                            line: i,
+                            hasRange: !!dateRange,
+                            fromDate: dateRange ? dateRange.fromDate : null,
+                            toDate: dateRange ? dateRange.toDate : null
                         });
                     } else if (line.trim() && !line.match(/^\*\*|^##|^###/)) {
                         // Include non-empty lines that aren't headers as notes
@@ -167,7 +245,79 @@ class PlannerParser {
     getDataForDate(date) {
         const { moment } = window;
         const dateKey = moment(date).format("YYYY-MM-DD");
-        return this.plannerData[dateKey] || null;
+        const baseData = this.plannerData[dateKey] || { tasks: [] };
+        
+        // Find range entries that span this date
+        const rangeTasksForDate = this.rangeEntries.filter(entry => {
+            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
+            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
+            const targetDate = moment(dateKey, "YYYY-MM-DD");
+            return targetDate.isSameOrAfter(entryFrom) && targetDate.isSameOrBefore(entryTo);
+        }).map(entry => {
+            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
+            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
+            const targetDate = moment(dateKey, "YYYY-MM-DD");
+            
+            // Determine position in range (start, middle, end)
+            let rangePosition = 'middle';
+            if (targetDate.isSame(entryFrom, 'day')) {
+                rangePosition = 'start';
+            } else if (targetDate.isSame(entryTo, 'day')) {
+                rangePosition = 'end';
+            }
+            
+            return {
+                ...entry,
+                isRangeEntry: true,
+                rangePosition,
+                isFromSourceDate: entry.sourceDate === dateKey
+            };
+        });
+        
+        // Combine base tasks with range tasks (avoid duplicates)
+        const allTasks = [...baseData.tasks];
+        
+        // Add range tasks that aren't from this date's source
+        rangeTasksForDate.forEach(rangeTask => {
+            if (!rangeTask.isFromSourceDate) {
+                allTasks.push(rangeTask);
+            }
+        });
+        
+        return {
+            ...baseData,
+            tasks: allTasks,
+            hasRangeEntries: rangeTasksForDate.length > 0
+        };
+    }
+
+    // Get range entries for a specific date (for visual display)
+    getRangeEntriesForDate(date) {
+        const { moment } = window;
+        const dateKey = moment(date).format("YYYY-MM-DD");
+        
+        return this.rangeEntries.filter(entry => {
+            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
+            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
+            const targetDate = moment(dateKey, "YYYY-MM-DD");
+            return targetDate.isSameOrAfter(entryFrom) && targetDate.isSameOrBefore(entryTo);
+        }).map(entry => {
+            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
+            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
+            const targetDate = moment(dateKey, "YYYY-MM-DD");
+            
+            let rangePosition = 'middle';
+            if (targetDate.isSame(entryFrom, 'day')) {
+                rangePosition = 'start';
+            } else if (targetDate.isSame(entryTo, 'day')) {
+                rangePosition = 'end';
+            }
+            
+            return {
+                ...entry,
+                rangePosition
+            };
+        });
     }
 
     hasDataForDate(date) {
@@ -187,7 +337,7 @@ class PlannerParser {
         return data.tasks.filter(t => !t.isNote && !t.completed).length;
     }
 
-    async addEntryForDate(date, text) {
+    async addEntryForDate(date, text, fromDate = null, toDate = null) {
         const { vault } = this.app;
         const { moment } = window;
         const plannerFile = vault.getAbstractFileByPath(this.plannerPath);
@@ -202,17 +352,25 @@ class PlannerParser {
 
         const existingData = this.plannerData[dateKey];
         
+        // Format the task text with date range if provided
+        let taskText = text;
+        if (fromDate && toDate) {
+            const fromStr = moment(fromDate).format("DD/MM");
+            const toStr = moment(toDate).format("DD/MM");
+            taskText = `${text} [${fromStr} - ${toStr}]`;
+        }
+        
         if (existingData) {
             // Add to existing date section
             const lines = content.split('\n');
             const insertLine = existingData.lineEnd + 1;
             const taskNum = existingData.tasks.filter(t => !t.isNote).length + 1;
-            const newTaskLine = `${taskNum}) ${text}`;
+            const newTaskLine = `${taskNum}) ${taskText}`;
             lines.splice(insertLine, 0, newTaskLine);
             content = lines.join('\n');
         } else {
             // Create new date section
-            const newSection = `\n**${dateStr}**\n1) ${text}\n`;
+            const newSection = `\n**${dateStr}**\n1) ${taskText}\n`;
             content = content + newSection;
         }
 
@@ -843,6 +1001,18 @@ class PlannerDayModal extends obsidian.Modal {
                         text: task.text,
                         cls: task.completed ? "completed" : ""
                     });
+                    
+                    // Show date range badge if this is a range entry
+                    if (task.hasRange || task.isRangeEntry) {
+                        const fromDate = task.fromDate ? moment(task.fromDate).format("DD/MM") : "";
+                        const toDate = task.toDate ? moment(task.toDate).format("DD/MM") : "";
+                        if (fromDate && toDate) {
+                            taskEl.createEl("span", {
+                                cls: "planner-task-range-badge",
+                                text: `${fromDate} → ${toDate}`
+                            });
+                        }
+                    }
                 }
             });
         } else {
@@ -865,11 +1035,52 @@ class PlannerDayModal extends obsidian.Modal {
             cls: "planner-add-button"
         });
         
+        // Date range toggle and inputs
+        const rangeContainer = contentEl.createDiv({ cls: "planner-range-container" });
+        
+        const rangeToggle = rangeContainer.createEl("label", { cls: "planner-range-toggle" });
+        const rangeCheckbox = rangeToggle.createEl("input", { type: "checkbox" });
+        rangeToggle.createEl("span", { text: " Multi-day event" });
+        
+        const rangeDatesContainer = rangeContainer.createDiv({ cls: "planner-range-dates hidden" });
+        
+        const fromLabel = rangeDatesContainer.createEl("label", { cls: "planner-date-label" });
+        fromLabel.createEl("span", { text: "From: " });
+        const fromInput = fromLabel.createEl("input", {
+            type: "date",
+            cls: "planner-date-input",
+            value: moment(this.date).format("YYYY-MM-DD")
+        });
+        
+        const toLabel = rangeDatesContainer.createEl("label", { cls: "planner-date-label" });
+        toLabel.createEl("span", { text: "To: " });
+        const toInput = toLabel.createEl("input", {
+            type: "date",
+            cls: "planner-date-input",
+            value: moment(this.date).add(1, 'day').format("YYYY-MM-DD")
+        });
+        
+        rangeCheckbox.addEventListener("change", () => {
+            if (rangeCheckbox.checked) {
+                rangeDatesContainer.removeClass("hidden");
+            } else {
+                rangeDatesContainer.addClass("hidden");
+            }
+        });
+        
         const addTask = async () => {
             const text = input.value.trim();
             if (text) {
-                await this.parser.addEntryForDate(this.date, text);
+                if (rangeCheckbox.checked) {
+                    const fromDate = fromInput.value ? new Date(fromInput.value) : null;
+                    const toDate = toInput.value ? new Date(toInput.value) : null;
+                    await this.parser.addEntryForDate(this.date, text, fromDate, toDate);
+                } else {
+                    await this.parser.addEntryForDate(this.date, text);
+                }
                 input.value = "";
+                rangeCheckbox.checked = false;
+                rangeDatesContainer.addClass("hidden");
                 this.onUpdate();
                 this.onOpen(); // Refresh the modal
             }
@@ -1030,6 +1241,59 @@ class PlannerDayModal extends obsidian.Modal {
             }
             .planner-open-button:hover {
                 background: var(--background-modifier-border);
+            }
+            .planner-range-container {
+                margin-bottom: 16px;
+            }
+            .planner-range-toggle {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+            }
+            .planner-range-toggle input[type="checkbox"] {
+                width: 16px;
+                height: 16px;
+                cursor: pointer;
+            }
+            .planner-range-dates {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+            }
+            .planner-range-dates.hidden {
+                display: none;
+            }
+            .planner-date-label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 14px;
+                color: var(--text-normal);
+            }
+            .planner-date-input {
+                padding: 6px 10px;
+                border: 1px solid var(--background-modifier-border);
+                border-radius: 6px;
+                background: var(--background-primary);
+                color: var(--text-normal);
+                font-size: 14px;
+            }
+            .planner-date-input:focus {
+                outline: none;
+                border-color: var(--interactive-accent);
+            }
+            .planner-task-range-badge {
+                display: inline-block;
+                padding: 2px 6px;
+                background: var(--interactive-accent);
+                color: var(--text-on-accent);
+                border-radius: 4px;
+                font-size: 11px;
+                margin-left: 8px;
             }
         `;
         document.head.appendChild(styleEl);
@@ -1712,6 +1976,7 @@ function createPlannerTaskSource(parser, settingsStore) {
             const currentSettings = get_store_value(settingsStore);
             const maxEntries = currentSettings.maxEntriesPerDay || 3;
             const data = parser.getDataForDate(date);
+            const rangeEntries = parser.getRangeEntriesForDate(date);
             const entries = [];
             
             if (data && data.tasks) {
@@ -1719,10 +1984,13 @@ function createPlannerTaskSource(parser, settingsStore) {
                 const remainingCount = data.tasks.length - maxEntries;
                 
                 allEntries.forEach(task => {
+                    const displayText = task.text.length > 12 ? task.text.substring(0, 12) + '…' : task.text;
                     entries.push({
-                        text: task.text.length > 12 ? task.text.substring(0, 12) + '…' : task.text,
+                        text: displayText,
                         completed: task.completed,
-                        isNote: task.isNote
+                        isNote: task.isNote,
+                        isRangeEntry: task.isRangeEntry || task.hasRange,
+                        rangePosition: task.rangePosition || (task.hasRange ? 'start' : null)
                     });
                 });
                 
@@ -1734,7 +2002,11 @@ function createPlannerTaskSource(parser, settingsStore) {
                 }
             }
             
-            return { dots: [], entries };
+            return { 
+                dots: [], 
+                entries,
+                hasRangeEntries: rangeEntries.length > 0
+            };
         },
         getWeeklyMetadata: async (date) => {
             return { dots: [], entries: [] };
@@ -2143,7 +2415,7 @@ class MetadataResolver extends SvelteComponent {
 function add_css$4() {
     var style = element("style");
     style.id = "svelte-q3wqg9-style";
-    style.textContent = ".day.svelte-q3wqg9{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;min-height:70px;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:top}.day.svelte-q3wqg9:hover{background-color:var(--interactive-hover)}.day.active.svelte-q3wqg9:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-q3wqg9{opacity:0.25}.today.svelte-q3wqg9{color:var(--color-text-today)}.day.svelte-q3wqg9:active,.active.svelte-q3wqg9,.active.today.svelte-q3wqg9{color:var(--text-on-accent);background-color:var(--interactive-accent)}.day-number.svelte-q3wqg9{font-weight:600;margin-bottom:2px}.entries-container.svelte-q3wqg9{display:flex;flex-direction:column;gap:1px;font-size:0.7em;text-align:left;line-height:1.2}.entry.svelte-q3wqg9{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px;border-radius:2px;background:var(--background-modifier-hover)}.entry.completed.svelte-q3wqg9{text-decoration:line-through;opacity:0.6}.entry.overflow.svelte-q3wqg9{font-style:italic;color:var(--text-muted);background:none}.active .entry.svelte-q3wqg9{background:rgba(255,255,255,0.2)}.dot-container.svelte-q3wqg9{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
+    style.textContent = ".day.svelte-q3wqg9{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;min-height:70px;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:top}.day.svelte-q3wqg9:hover{background-color:var(--interactive-hover)}.day.active.svelte-q3wqg9:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-q3wqg9{opacity:0.25}.today.svelte-q3wqg9{color:var(--color-text-today)}.day.svelte-q3wqg9:active,.active.svelte-q3wqg9,.active.today.svelte-q3wqg9{color:var(--text-on-accent);background-color:var(--interactive-accent)}.day-number.svelte-q3wqg9{font-weight:600;margin-bottom:2px}.entries-container.svelte-q3wqg9{display:flex;flex-direction:column;gap:1px;font-size:0.7em;text-align:left;line-height:1.2}.entry.svelte-q3wqg9{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px;border-radius:2px;background:var(--background-modifier-hover)}.entry.completed.svelte-q3wqg9{text-decoration:line-through;opacity:0.6}.entry.overflow.svelte-q3wqg9{font-style:italic;color:var(--text-muted);background:none}.entry.range.svelte-q3wqg9{background:var(--interactive-accent);color:var(--text-on-accent);opacity:0.85}.entry.range-start.svelte-q3wqg9{border-radius:2px 0 0 2px;margin-right:-2px}.entry.range-middle.svelte-q3wqg9{border-radius:0;margin-left:-2px;margin-right:-2px}.entry.range-end.svelte-q3wqg9{border-radius:0 2px 2px 0;margin-left:-2px}.active .entry.svelte-q3wqg9{background:rgba(255,255,255,0.2)}.active .entry.range.svelte-q3wqg9{background:rgba(255,255,255,0.4)}.dot-container.svelte-q3wqg9{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
     append(document.head, style);
 }
 
@@ -2166,6 +2438,10 @@ function create_each_block$2(ctx) {
             attr(div, "class", "entry svelte-q3wqg9");
             toggle_class(div, "completed", ctx[11].completed);
             toggle_class(div, "overflow", ctx[11].isOverflow);
+            toggle_class(div, "range", ctx[11].isRangeEntry);
+            toggle_class(div, "range-start", ctx[11].rangePosition === 'start');
+            toggle_class(div, "range-middle", ctx[11].rangePosition === 'middle');
+            toggle_class(div, "range-end", ctx[11].rangePosition === 'end');
         },
         m(target, anchor) {
             insert(target, div, anchor);
@@ -2176,6 +2452,10 @@ function create_each_block$2(ctx) {
             if (dirty & 128) {
                 toggle_class(div, "completed", ctx[11].completed);
                 toggle_class(div, "overflow", ctx[11].isOverflow);
+                toggle_class(div, "range", ctx[11].isRangeEntry);
+                toggle_class(div, "range-start", ctx[11].rangePosition === 'start');
+                toggle_class(div, "range-middle", ctx[11].rangePosition === 'middle');
+                toggle_class(div, "range-end", ctx[11].rangePosition === 'end');
             }
         },
         i: noop,

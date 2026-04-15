@@ -11,8 +11,22 @@ A modified version of the [Obsidian Calendar Plugin](https://github.com/liamcain
 - **Entry Preview**: See actual entry text on calendar days (not just dots)
 - **Task Management**: Click to view, add, and complete tasks
 - **Checkbox Support**: Toggle task completion with `[ ]` and `[x]` syntax
+- **Multi-Day Events**: Create entries that span multiple days with date ranges
 - **Quick Navigation**: Jump directly to any date in your planner file
 - **Flexible Date Formats**: Supports `DD/MM/YYYY` and `YYYY-MM-DD` formats
+
+## Installation
+
+1. Navigate to your Obsidian plugins folder:
+   ```
+   <vault>/.obsidian/plugins/calendar/
+   ```
+
+2. Replace the existing `main.js` with the modified version
+
+3. Reload Obsidian (Ctrl/Cmd + R) or restart the app
+
+4. Enable the Calendar plugin in Settings → Community Plugins
 
 ## Planner File Format
 
@@ -55,6 +69,26 @@ Just plain text (treated as a note)
 2) Send emails
 ```
 
+### Multi-Day Events (Date Ranges)
+
+You can create entries that span multiple days using the `[from - to]` format:
+
+```markdown
+**21/03/2026**
+- [ ] Conference trip [21/03 - 23/03]
+- [ ] Project deadline [21/03/2026 - 25/03/2026]
+1) Holiday [15/03 - 20/03]
+```
+
+**Format options:**
+- `[DD/MM - DD/MM]` — Uses the current year
+- `[DD/MM/YYYY - DD/MM/YYYY]` — Explicit year
+
+Multi-day events will:
+- Appear on all days within the range
+- Show with a highlighted background on the calendar
+- Display a date badge in the modal view
+
 ## Usage
 
 ### Viewing the Calendar
@@ -75,8 +109,10 @@ Just plain text (treated as a note)
 
 - View all entries for the selected day
 - **Checkbox**: Click to mark incomplete tasks as done
-- **Checkmark (✓)**: Indicates completed tasks (non-clickable)
+- **Checkmark (✓)**: Indicates completed tasks (click to uncheck)
 - **Add new entry**: Type and press Enter or click Add
+- **Multi-day event**: Check the box to add from/to dates
+- **Date range badge**: Shows the span for multi-day events
 - **Open Planner File**: Jump to that date's section in your planner
 
 ## Settings
