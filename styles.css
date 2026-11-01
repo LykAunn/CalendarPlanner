@@ -1,0 +1,392 @@
+/* Calendar Planner — Day View additions. Designed for Obsidian light/dark themes. */
+.planner-day-root {
+  --planner-border: var(--background-modifier-border);
+  --planner-hour-width: 64px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 15px;
+  padding: 20px clamp(12px, 2.5vw, 28px);
+  color: var(--text-normal);
+}
+.planner-day-root *, .planner-editor * { box-sizing: border-box; }
+.planner-day-toolbar, .planner-day-actions, .planner-day-nav,
+.planner-actions-buttons, .planner-panel-header { display: flex; align-items: center; gap: 8px; }
+.planner-day-toolbar, .planner-day-actions { justify-content: space-between; flex-wrap: wrap; }
+.planner-heading { min-width: 0; }
+.planner-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .11em; color: var(--text-accent); }
+.planner-day-title { font-size: clamp(18px, 2vw, 25px); line-height: 1.3; margin: 2px 0 0; font-weight: 650; }
+.planner-day-nav { flex-wrap: wrap; }
+.planner-ui-btn {
+  font: inherit; font-size: var(--font-ui-small); cursor: pointer;
+  display: inline-flex; justify-content: center; align-items: center;
+  gap: 6px; min-height: 32px; padding: 6px 11px;
+  background: var(--background-secondary-alt); color: var(--text-normal);
+  border: 1px solid var(--planner-border, var(--background-modifier-border));
+  border-radius: var(--radius-s, 6px); white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease;
+}
+.planner-ui-btn:hover { background: var(--background-modifier-hover); border-color: var(--background-modifier-border-hover); }
+.planner-ui-btn:focus-visible, .planner-block-main:focus-visible,
+.planner-side-task-title:focus-visible, .planner-date-picker:focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+.planner-ui-btn.is-active { background: var(--background-modifier-hover); color: var(--text-accent); }
+.planner-ui-btn.mod-cta { background: var(--interactive-accent); color: var(--text-on-accent); border-color: transparent; }
+.planner-ui-btn.mod-cta:hover { background: var(--interactive-accent-hover); }
+.planner-ui-btn:disabled { opacity: .55; cursor: wait; }
+.planner-date-picker {
+  background: var(--background-primary); color: var(--text-normal);
+  border: 1px solid var(--planner-border); border-radius: var(--radius-s, 6px);
+  padding: 6px 8px; font: inherit; font-size: var(--font-ui-small); max-width: 180px;
+}
+.planner-progress { min-width: 176px; max-width: 245px; flex: 1 1 176px; display: flex; flex-direction: column; gap: 6px; }
+.planner-progress-label { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.planner-progress-track { height: 6px; border-radius: 999px; background: var(--background-modifier-border); overflow: hidden; }
+.planner-progress-bar { background: var(--interactive-accent); height: 100%; border-radius: inherit; transition: width .2s ease; }
+.planner-actions-buttons { flex-wrap: wrap; }
+.planner-day-content {
+  flex: 1 1 auto; min-height: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(235px, 320px); gap: 14px;
+}
+.planner-day-timeline-panel, .planner-day-sidebar {
+  min-height: 0; min-width: 0;
+  background: var(--background-secondary); border: 1px solid var(--planner-border);
+  border-radius: var(--radius-m, 9px); overflow: hidden;
+}
+.planner-day-timeline-panel { display: flex; flex-direction: column; }
+.planner-panel-header { flex-shrink: 0; justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid var(--planner-border); }
+.planner-panel-header h3 { margin: 0; font-size: 14px; font-weight: 700; }
+.planner-muted { font-size: 11px; color: var(--text-faint); }
+.planner-day-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.planner-time-grid { position: relative; min-width: 225px; background: var(--background-primary); }
+.planner-hour-line {
+  position: absolute; left: 0; right: 0; height: 1px;
+  border-top: 1px solid var(--background-modifier-border);
+  pointer-events: none; z-index: 1;
+}
+.planner-hour-label { position: absolute; left: 11px; top: -9px; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.planner-hour-hit {
+  position: absolute; left: var(--planner-hour-width); right: 0;
+  width: calc(100% - var(--planner-hour-width));
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  cursor: crosshair; z-index: 1;
+}
+.planner-hour-hit:hover { background: color-mix(in srgb, var(--interactive-accent) 7%, transparent); }
+.planner-hour-hit:focus-visible { outline: 2px dashed var(--interactive-accent); outline-offset: -3px; }
+.planner-blocks-layer {
+  position: absolute; top: 0; left: calc(var(--planner-hour-width) + 5px); right: 11px;
+  height: 100%; pointer-events: none; z-index: 2;
+}
+.planner-time-block {
+  display: flex; align-items: flex-start; gap: 7px;
+  position: absolute; padding: 6px 7px; overflow: hidden;
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--interactive-accent) 13%, var(--background-primary));
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+  border-left: 3px solid var(--interactive-accent); border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.planner-time-block:hover { filter: brightness(1.04); z-index: 3; }
+.planner-time-block.is-done { opacity: .58; }
+.planner-block-checkbox { flex: 0 0 15px; width: 15px; height: 15px; margin: 1px 0 0; cursor: pointer; }
+.planner-block-main {
+  display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start;
+  background: transparent !important; border: 0 !important; box-shadow: none !important;
+  padding: 0; margin: 0; text-align: left; color: var(--text-normal); cursor: pointer;
+  white-space: normal; overflow: hidden;
+}
+.planner-block-title { line-height: 1.25; font-size: 12px; overflow-wrap: anywhere; width: 100%; }
+.planner-block-time { font-size: 10px; line-height: 1.25; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.planner-time-block.is-done .planner-block-title, .planner-side-task.is-done .planner-side-task-title { text-decoration: line-through; }
+.planner-block-repeating { flex-shrink: 0; font-size: 14px; font-weight: 700; color: var(--text-accent); }
+.planner-now-line {
+  position: absolute; left: var(--planner-hour-width); right: 0;
+  height: 2px; background: var(--color-red, #ea5b5b); z-index: 5;
+  box-shadow: 0 0 3px var(--color-red, #ea5b5b); pointer-events: none;
+}
+.planner-now-line::before {
+  content: ""; position: absolute; left: -4px; top: -3px;
+  width: 8px; height: 8px; border-radius: 50%; background: inherit;
+}
+.planner-day-sidebar { padding-bottom: 15px; overflow-y: auto; }
+.planner-day-sidebar .planner-panel-header { position: sticky; top: 0; z-index: 1; background: var(--background-secondary); }
+.planner-side-task-list { padding: 8px 13px; }
+.planner-side-task {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 9px 3px; border-bottom: 1px solid var(--planner-border);
+}
+.planner-side-task:last-child { border-bottom: 0; }
+.planner-side-task input[type="checkbox"] { margin: 2px 0 0; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+.planner-side-task-title {
+  padding: 0; margin: 0; flex: 1 1 auto; min-width: 0; font: inherit; font-size: 13px;
+  text-align: left; background: none !important; color: var(--text-normal);
+  border: 0 !important; box-shadow: none !important; cursor: pointer; overflow-wrap: anywhere;
+}
+.planner-side-task-title:hover { color: var(--text-accent); }
+.planner-repeat-pill, .planner-range-pill {
+  flex-shrink: 0; color: var(--text-accent); background: var(--background-modifier-hover);
+  border-radius: 4px; padding: 2px 5px; font-size: 10px;
+}
+.planner-empty-state { margin: 16px; font-size: 12px; line-height: 1.6; color: var(--text-muted); }
+.planner-notes-heading { margin: 14px 16px 5px; font-size: 12px; color: var(--text-muted); }
+.planner-note-entry { margin: 7px 16px; font-size: 12px; color: var(--text-muted); white-space: pre-wrap; }
+.planner-side-add { margin: 9px 15px; width: calc(100% - 30px); border-style: dashed; }
+/* Task editing forms deliberately use Obsidian's native input palette. */
+.planner-editor { max-height: 75vh; overflow-y: auto; }
+.planner-editor-form { display: flex; flex-direction: column; gap: 15px; }
+.planner-editor-hint, .planner-form-help { color: var(--text-muted); line-height: 1.45; font-size: 12px; margin: 2px 0; }
+.planner-form-pair { display: flex; gap: 12px; }
+.planner-form-pair > * { flex: 1 1 0; min-width: 0; }
+.planner-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.planner-field[hidden], .planner-form-pair[hidden], .planner-checkbox-row[hidden] { display: none; }
+.planner-field-label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.planner-field-input { width: 100%; min-height: 33px; padding: 6px 9px; border-radius: var(--radius-s, 6px); }
+.planner-checkbox-row { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.planner-editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.planner-btn-danger { color: var(--text-error); margin-right: auto; }
+.planner-btn-danger:hover { color: var(--text-error); }
+@media (max-width: 900px) {
+  .planner-day-content { grid-template-columns: minmax(0, 1fr) minmax(205px, 270px); }
+  .planner-day-root { padding: 13px; }
+}
+@media (max-width: 700px) {
+  .planner-day-content { display: flex; flex-direction: column; overflow-y: auto; }
+  .planner-day-timeline-panel { min-height: 420px; height: 52vh; flex-shrink: 0; }
+  .planner-day-sidebar { min-height: 160px; flex: 0 0 auto; max-height: none; overflow: visible; }
+  .planner-day-content { min-height: 0; }
+  .planner-day-nav { width: 100%; }
+  .planner-date-picker { flex: 1 1 auto; max-width: 190px; }
+  .planner-day-toolbar { gap: 12px; }
+  .planner-muted { display: none; }
+  .planner-form-pair { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .planner-ui-btn, .planner-progress-bar { transition: none; }
+}
+
+/* ============================================
+   Planner v2 — day / three-day / full-week layout
+   ============================================ */
+.planner-view-modes {
+  display: inline-flex; align-items: center; padding: 3px; gap: 2px;
+  background: var(--background-secondary-alt);
+  border: 1px solid var(--planner-border);
+  border-radius: var(--radius-m, 8px);
+}
+.planner-mode-btn {
+  min-height: 29px; padding: 4px 12px; font: inherit;
+  font-size: var(--font-ui-small); border: 0; border-radius: var(--radius-s, 6px);
+  color: var(--text-muted); background: transparent; box-shadow: none;
+  cursor: pointer; transition: color .12s ease, background .12s ease;
+}
+.planner-mode-btn:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.planner-mode-btn.is-active {
+  background: var(--background-primary); color: var(--text-normal);
+  box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 650;
+}
+.planner-mode-btn:focus-visible, .planner-multi-day-name:focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+.planner-editor-date { margin: 0 0 16px; font-size: 12px; color: var(--text-muted); }
+.planner-in-multi .planner-day-content { grid-template-columns: minmax(0, 1fr); }
+.planner-multi-panel { width: 100%; min-width: 0; }
+.planner-multi-scroll { overflow: auto; scrollbar-gutter: stable; }
+.planner-multi-board {
+  --planner-days: 3;
+  --planner-hour-width: 64px;
+  width: 100%;
+  background: var(--background-primary);
+}
+.planner-multi-board.planner-span-3 { min-width: 675px; }
+.planner-multi-board.planner-span-7 { min-width: 1080px; }
+.planner-multi-header, .planner-multi-grid {
+  display: grid;
+  grid-template-columns: var(--planner-hour-width) repeat(var(--planner-days), minmax(0, 1fr));
+}
+.planner-multi-header {
+  position: sticky; top: 0; z-index: 8;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--planner-border);
+  min-height: 85px;
+}
+.planner-multi-corner {
+  position: sticky; left: 0; z-index: 2;
+  display: flex; align-items: flex-start;
+  padding: 13px 5px 7px 8px;
+  font-size: 9px; font-weight: 750; letter-spacing: .035em;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  border-right: 1px solid var(--planner-border);
+}
+.planner-multi-day-header {
+  min-width: 0;
+  padding: 8px 7px 5px;
+  border-left: 1px solid var(--planner-border);
+}
+.planner-multi-day-header.is-today {
+  background: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-secondary));
+}
+.planner-multi-day-heading { display: flex; align-items: center; gap: 3px; justify-content: space-between; }
+.planner-multi-day-name {
+  flex: 1 1 auto; min-width: 0; padding: 3px 4px;
+  font-weight: 670; font-size: 12px; text-align: left;
+  background: none !important; border: none !important; box-shadow: none !important;
+  color: var(--text-normal); cursor: pointer;
+}
+.planner-multi-day-name:hover { color: var(--text-accent); }
+.planner-multi-day-header.is-today .planner-multi-day-name { color: var(--text-accent); }
+.planner-small-add.planner-ui-btn {
+  min-width: 26px; min-height: 26px; padding: 4px; background: transparent;
+  border: 1px solid transparent;
+}
+.planner-small-add:hover { background: var(--background-modifier-hover); border-color: var(--planner-border); }
+.planner-multi-all-day {
+  min-height: 28px; max-height: 128px; overflow-y: auto;
+  scrollbar-width: thin;
+}
+.planner-multi-no-tasks { display: block; padding: 4px; font-size: 10px; color: var(--text-faint); }
+.planner-compact-list { padding: 0; }
+.planner-compact-list .planner-side-task { padding: 3px 2px; gap: 5px; }
+.planner-compact-list .planner-side-task input[type="checkbox"] { width: 13px; height: 13px; margin: 1px 0 0; }
+.planner-compact-list .planner-side-task-title { font-size: 11px; line-height: 1.3; }
+.planner-compact-list .planner-repeat-pill,
+.planner-compact-list .planner-range-pill { font-size: 9px; padding: 1px 3px; }
+.planner-span-7 .planner-range-pill { display: none; }
+.planner-multi-note {
+  margin: 3px 2px; font-size: 10px; line-height: 1.25;
+  color: var(--text-muted); overflow-wrap: anywhere;
+}
+.planner-multi-grid { position: relative; }
+.planner-multi-time-axis {
+  position: sticky; left: 0; z-index: 6;
+  height: 100%; background: var(--background-primary);
+  border-right: 1px solid var(--planner-border);
+}
+.planner-multi-time-axis .planner-hour-line { right: 0; }
+.planner-multi-time-axis .planner-hour-label { left: 8px; }
+.planner-multi-column {
+  position: relative; min-width: 0; height: 100%;
+  border-left: 1px solid var(--planner-border);
+  background: var(--background-primary);
+}
+.planner-multi-column.is-today {
+  background: color-mix(in srgb, var(--interactive-accent) 2%, var(--background-primary));
+}
+.planner-slot-line {
+  position: absolute; left: 0; right: 0;
+  border-top: 1px solid var(--background-modifier-border);
+  height: 1px; pointer-events: none; z-index: 0;
+}
+.planner-multi-column .planner-hour-hit {
+  position: absolute; left: 0; right: 0; width: 100%;
+  z-index: 1;
+}
+.planner-multi-column .planner-blocks-layer {
+  left: 4px; right: 4px; z-index: 2;
+}
+.planner-multi-column .planner-time-block {
+  min-width: 0; padding: 4px 5px; gap: 4px;
+  border-left-width: 2px;
+}
+.planner-span-7 .planner-time-block .planner-block-title { font-size: 11px; }
+.planner-span-7 .planner-time-block .planner-block-time { font-size: 9px; }
+.planner-span-7 .planner-time-block .planner-block-repeating { display: none; }
+.planner-multi-column .planner-block-checkbox { width: 13px; height: 13px; flex-basis: 13px; }
+.planner-multi-column .planner-now-line { left: 0; right: 0; }
+.planner-hour-hit-multi:hover { background: color-mix(in srgb, var(--interactive-accent) 9%, transparent); }
+@media (max-width: 900px) {
+  .planner-in-multi .planner-day-content { display: flex; min-height: 0; overflow: hidden; }
+  .planner-in-multi .planner-multi-panel { flex: 1; min-height: 0; height: auto; }
+  .planner-in-multi .planner-multi-scroll { flex: 1; min-height: 0; }
+  .planner-day-actions { row-gap: 11px; }
+}
+@media (max-width: 700px) {
+  .planner-view-modes { flex: 1 0 auto; justify-content: center; }
+  .planner-mode-btn { flex: 1; }
+  .planner-in-multi .planner-day-content { overflow: hidden; }
+  .planner-in-multi .planner-multi-panel { height: 100%; }
+  .planner-in-multi .planner-multi-scroll { overflow: auto; }
+  .planner-multi-board.planner-span-3 { min-width: 640px; }
+  .planner-multi-board.planner-span-7 { min-width: 1010px; }
+  .planner-editor { max-height: 72vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .planner-mode-btn { transition: none; }
+}
+
+/* v3.1: Visible hourly cells in every layout.
+   The previous v3 hit targets were transparent buttons above faint grid lines;
+   Obsidian themes could make those lines effectively invisible. Give the
+   actual interactive slots their own surface and crisp hour boundaries.
+   Both the fill and border are scoped to the planner, so theme buttons and
+   existing event blocks are unaffected. */
+.planner-day-root {
+  --planner-hour-cell-bg: var(--background-secondary);
+  --planner-hour-divider: color-mix(in srgb, var(--text-muted) 42%, var(--background-modifier-border));
+}
+.planner-day-root button.planner-hour-hit {
+  display: block;
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  appearance: none;
+  background: var(--planner-hour-cell-bg) !important;
+  border: 0 !important;
+  border-top: 1px solid var(--planner-hour-divider) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+.planner-day-root button.planner-hour-hit:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--planner-hour-cell-bg)) !important;
+}
+.planner-day-root button.planner-hour-hit:focus-visible {
+  outline: 2px dashed var(--interactive-accent) !important;
+  outline-offset: -3px;
+}
+/* The separate markers keep the time axis and final day-end line visible. */
+.planner-day-root .planner-hour-line,
+.planner-day-root .planner-slot-line {
+  border-top-color: var(--planner-hour-divider);
+}
+/* Today’s column retains a slight theme-accent wash without losing lines. */
+.planner-day-root .planner-multi-column.is-today button.planner-hour-hit {
+  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--planner-hour-cell-bg)) !important;
+}
+.planner-day-root .planner-multi-column.is-today button.planner-hour-hit:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--planner-hour-cell-bg)) !important;
+}
+
+/* v3: drag an empty timeline range to create a precisely timed task. */
+.planner-drag-selection {
+  position: absolute; z-index: 4;
+  left: var(--planner-hour-width); right: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--interactive-accent) 23%, transparent);
+  border: 1px solid var(--interactive-accent);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+.planner-drag-selection[hidden] { display: none !important; }
+.planner-drag-selection-multi { left: 0; right: 0; }
+.planner-drag-selection-label {
+  position: sticky; top: 3px;
+  display: inline-block;
+  width: max-content; max-width: 100%;
+  margin: 4px 0 0 6px; padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--interactive-accent); color: var(--text-on-accent);
+  font-size: 11px; font-weight: 700; line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+.planner-is-selecting, .planner-is-selecting * { user-select: none !important; }
+.planner-is-selecting .planner-hour-hit { cursor: ns-resize; }
+@media (prefers-reduced-motion: reduce) {
+  .planner-drag-selection { transition: none; }
+}

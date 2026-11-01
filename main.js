@@ -18,406 +18,317 @@ const DEFAULT_PLANNER_PATH = "planner.md";
 // PLANNER PARSER - Reads from master planner.md
 // ============================================
 
+// Planner data engine. The master Markdown file remains the source of truth.
+const PLANNER_META_PATTERN = /\s*\[(repeat|every|until|done|except|pid|time)::\s*([^\]]*)\]/gi;
+const PLANNER_DATE_PATTERNS = [
+    /^\*\*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\*\*\s*$/,
+    /^#{2,3}\s*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\s*$/
+];
+const PLANNER_REPEAT_VALUES = ["none", "daily", "weekdays", "weekly", "monthly", "yearly"];
+
+function plannerTimeToMinutes(str) {
+    if (!str || !/^\d{1,2}:\d{2}$/.test(str)) return null;
+    const [h, m] = str.split(":").map(Number);
+    if (h > 23 || m > 59) return null;
+    return h * 60 + m;
+}
+function plannerMinutesToTime(num) {
+    return `${String(Math.floor(num / 60)).padStart(2, "0")}:${String(num % 60).padStart(2, "0")}`;
+}
+function plannerDateKey(date) {
+    return window.moment(date).format("YYYY-MM-DD");
+}
+function plannerDateList(value) {
+    return [...new Set(String(value || "").split(",").map(v => v.trim())
+        .filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v) && window.moment(v, "YYYY-MM-DD", true).isValid()))].sort();
+}
+function plannerDateOccurs(task, dateKey) {
+    const moment = window.moment;
+    if (!task.recurrence || task.recurrence === "none") return task.sourceDate === dateKey;
+    const start = moment(task.sourceDate, "YYYY-MM-DD", true);
+    const day = moment(dateKey, "YYYY-MM-DD", true);
+    if (!start.isValid() || !day.isValid() || day.isBefore(start, "day")) return false;
+    if (task.until && day.isAfter(moment(task.until, "YYYY-MM-DD", true), "day")) return false;
+    if (task.exceptions.includes(dateKey)) return false;
+    // The source date always represents the first occurrence, including a
+    // weekend start for a Mon–Fri rule.
+    if (day.isSame(start, "day")) return true;
+    const every = Math.max(1, Math.min(365, task.every || 1));
+    switch (task.recurrence) {
+        case "daily": return day.diff(start, "days") % every === 0;
+        case "weekdays": return day.isoWeekday() <= 5; // every is always 1 for weekdays.
+        case "weekly": return day.isoWeekday() === start.isoWeekday() &&
+            Math.floor(day.diff(start, "days") / 7) % every === 0;
+        case "monthly": return day.date() === start.date() && day.diff(start, "months") % every === 0;
+        case "yearly": return day.month() === start.month() && day.date() === start.date() &&
+            day.diff(start, "years") % every === 0;
+        default: return false;
+    }
+}
+
 class PlannerParser {
     constructor(app) {
         this.app = app;
-        this.plannerData = {};
-        this.rangeEntries = []; // Entries that span multiple days
         this.plannerPath = DEFAULT_PLANNER_PATH;
-    }
-
-    setPlannerPath(path) {
-        this.plannerPath = path;
-    }
-
-    async parsePlanner() {
-        const { vault } = this.app;
-        const plannerFile = vault.getAbstractFileByPath(this.plannerPath);
-        
-        if (!plannerFile || !(plannerFile instanceof obsidian__default['default'].TFile)) {
-            console.log("[Calendar] Planner file not found:", this.plannerPath);
-            this.plannerData = {};
-            this.rangeEntries = [];
-            return this.plannerData;
-        }
-
-        try {
-            const content = await vault.cachedRead(plannerFile);
-            this.plannerData = this.parseContent(content);
-            return this.plannerData;
-        } catch (err) {
-            console.error("[Calendar] Failed to read planner file:", err);
-            this.plannerData = {};
-            this.rangeEntries = [];
-            return this.plannerData;
-        }
-    }
-
-    // Parse date range from text like [13/03 - 15/03] or [13/03/2026 - 15/03/2026]
-    parseDateRange(text, contextYear) {
-        const { moment } = window;
-        
-        // Match patterns: [DD/MM - DD/MM] or [DD/MM/YYYY - DD/MM/YYYY]
-        const rangeMatch = text.match(/\[(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\s*[-–]\s*(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\]/);
-        
-        if (!rangeMatch) return null;
-        
-        let fromStr = rangeMatch[1];
-        let toStr = rangeMatch[2];
-        
-        // Add year if not present
-        if (!fromStr.match(/\/\d{4}$/)) {
-            fromStr += `/${contextYear}`;
-        }
-        if (!toStr.match(/\/\d{4}$/)) {
-            toStr += `/${contextYear}`;
-        }
-        
-        const fromDate = moment(fromStr, "DD/MM/YYYY", true);
-        const toDate = moment(toStr, "DD/MM/YYYY", true);
-        
-        if (!fromDate.isValid() || !toDate.isValid()) return null;
-        
-        // Extract text without the date range
-        const cleanText = text.replace(/\[(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\s*[-–]\s*(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\]/, '').trim();
-        
-        return {
-            fromDate: fromDate.format("YYYY-MM-DD"),
-            toDate: toDate.format("YYYY-MM-DD"),
-            text: cleanText,
-            originalText: text
-        };
-    }
-
-    parseContent(content) {
-        const { moment } = window;
-        const data = {};
+        this.plannerData = {};
+        this.allTasks = [];
         this.rangeEntries = [];
-        const lines = content.split('\n');
-        
-        // Match date patterns like **13/03/2026** or ## 13/03/2026 or ### 2026-03-13
-        const datePatterns = [
-            /^\*\*(\d{1,2}\/\d{1,2}\/\d{4})\*\*\s*$/,           // **DD/MM/YYYY**
-            /^\*\*(\d{4}-\d{2}-\d{2})\*\*\s*$/,                  // **YYYY-MM-DD**
-            /^##\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*$/,               // ## DD/MM/YYYY
-            /^##\s*(\d{4}-\d{2}-\d{2})\s*$/,                     // ## YYYY-MM-DD
-            /^###\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*$/,              // ### DD/MM/YYYY
-            /^###\s*(\d{4}-\d{2}-\d{2})\s*$/,                    // ### YYYY-MM-DD
-        ];
-
+    }
+    setPlannerPath(path) { this.plannerPath = path || DEFAULT_PLANNER_PATH; }
+    normalizeDate(str) {
+        const m = window.moment;
+        const date = m(str, ["DD/MM/YYYY", "YYYY-MM-DD"], true);
+        return date.isValid() ? date.format("YYYY-MM-DD") : null;
+    }
+    parseDateRange(text, contextYear) {
+        const match = text.match(/\[(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\s*[-–]\s*(\d{1,2}\/\d{1,2}(?:\/\d{4})?)\]/);
+        if (!match) return null;
+        const m = window.moment;
+        const from = m(match[1].split("/").length === 2 ? `${match[1]}/${contextYear}` : match[1], "DD/MM/YYYY", true);
+        const to = m(match[2].split("/").length === 2 ? `${match[2]}/${contextYear}` : match[2], "DD/MM/YYYY", true);
+        if (!from.isValid() || !to.isValid() || to.isBefore(from, "day")) return null;
+        return { fromDate: from.format("YYYY-MM-DD"), toDate: to.format("YYYY-MM-DD"), text: text.replace(match[0], "").trim() };
+    }
+    parseTaskLine(line, lineNum, dateKey) {
+        const checkbox = line.match(/^\s*(?:(?:[-*]|\d+[.)])\s+)?\[([ xX])\]\s*(.*)$/);
+        const bullet = !checkbox && line.match(/^\s*(?:[-*]|\d+[.)])\s+(.+)$/);
+        if (!checkbox && !bullet) return null;
+        let title = (checkbox ? checkbox[2] : bullet[1]).trim();
+        if (!title) return null;
+        const meta = {};
+        title = title.replace(PLANNER_META_PATTERN, (_whole, key, value) => {
+            meta[key.toLowerCase()] = value.trim();
+            return "";
+        }).trim();
+        let startMinutes = null, endMinutes = null;
+        const timedPrefix = title.match(/^(\d{1,2}:\d{2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?\s+(.+)$/);
+        if (timedPrefix && plannerTimeToMinutes(timedPrefix[1]) !== null) {
+            const a = plannerTimeToMinutes(timedPrefix[1]);
+            const b = timedPrefix[2] ? plannerTimeToMinutes(timedPrefix[2]) : a + 60;
+            if (b !== null && b > a && b <= 1440) {
+                startMinutes = a; endMinutes = b; title = timedPrefix[3].trim();
+            }
+        } else if (meta.time) {
+            const times = meta.time.match(/^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/);
+            if (times) {
+                const a = plannerTimeToMinutes(times[1]), b = plannerTimeToMinutes(times[2]);
+                if (a !== null && b !== null && b > a) { startMinutes = a; endMinutes = b; }
+            }
+        }
+        const range = this.parseDateRange(title, window.moment(dateKey, "YYYY-MM-DD").year());
+        if (range) title = range.text;
+        const recurrence = PLANNER_REPEAT_VALUES.includes(meta.repeat) ? meta.repeat : "none";
+        const every = recurrence === "weekdays" ? 1 : Math.max(1, Math.min(365, parseInt(meta.every, 10) || 1));
+        const until = this.normalizeDate(meta.until || "");
+        const task = {
+            text: title, completed: checkbox ? checkbox[1].toLowerCase() === "x" : false,
+            line: lineNum, sourceLine: lineNum, sourceDate: dateKey, rawLine: line,
+            id: meta.pid || null, recurrence, every, until,
+            doneDates: plannerDateList(meta.done), exceptions: plannerDateList(meta.except),
+            startMinutes, endMinutes, hasRange: !!range,
+            fromDate: range ? range.fromDate : null, toDate: range ? range.toDate : null,
+            isNote: false
+        };
+        return task;
+    }
+    parseContent(content) {
+        const lines = content.split("\n");
+        const data = {};
+        const allTasks = [];
         let currentDate = null;
-        let currentTasks = [];
-        let currentLineStart = 0;
-
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            let dateMatch = null;
-            
-            for (const pattern of datePatterns) {
-                const match = line.match(pattern);
-                if (match) {
-                    dateMatch = match[1];
-                    break;
-                }
+            let nextDate = null;
+            for (const pattern of PLANNER_DATE_PATTERNS) {
+                const found = line.match(pattern);
+                if (found) { nextDate = this.normalizeDate(found[1]); break; }
             }
-
-            if (dateMatch) {
-                // Save previous date's data
-                if (currentDate) {
-                    data[currentDate] = {
-                        tasks: currentTasks,
-                        lineStart: currentLineStart,
-                        lineEnd: i - 1
-                    };
-                }
-                
-                // Normalize date format to YYYY-MM-DD
-                currentDate = this.normalizeDate(dateMatch);
-                currentTasks = [];
-                currentLineStart = i;
-            } else if (currentDate) {
-                // Parse task lines - handle multiple formats:
-                // - [x] task, - [ ] task, * [x] task, 1) [x] task, [x] task, 1) task, - task
-                
-                // First, check if line contains a checkbox anywhere
-                const hasCheckbox = /\[([ xX])\]/.exec(line);
-                
-                if (hasCheckbox) {
-                    const isCompleted = hasCheckbox[1].toLowerCase() === 'x';
-                    // Extract text after the checkbox
-                    const textAfterCheckbox = line.substring(line.indexOf(']') + 1).trim();
-                    if (textAfterCheckbox) {
-                        // Check for date range in the text
-                        const contextYear = moment(currentDate, "YYYY-MM-DD").year();
-                        const dateRange = this.parseDateRange(textAfterCheckbox, contextYear);
-                        
-                        if (dateRange) {
-                            // This is a range entry
-                            this.rangeEntries.push({
-                                text: dateRange.text,
-                                fromDate: dateRange.fromDate,
-                                toDate: dateRange.toDate,
-                                completed: isCompleted,
-                                line: i,
-                                sourceDate: currentDate
-                            });
-                        }
-                        
-                        currentTasks.push({
-                            text: dateRange ? dateRange.text : textAfterCheckbox,
-                            completed: isCompleted,
-                            line: i,
-                            hasRange: !!dateRange,
-                            fromDate: dateRange ? dateRange.fromDate : null,
-                            toDate: dateRange ? dateRange.toDate : null
-                        });
-                    }
-                } else {
-                    // Check for numbered list or bullet without checkbox
-                    const listMatch = line.match(/^\s*(?:(\d+)\)|[-*])\s+(.+)$/);
-                    if (listMatch) {
-                        const taskText = listMatch[2].trim();
-                        const contextYear = moment(currentDate, "YYYY-MM-DD").year();
-                        const dateRange = this.parseDateRange(taskText, contextYear);
-                        
-                        if (dateRange) {
-                            this.rangeEntries.push({
-                                text: dateRange.text,
-                                fromDate: dateRange.fromDate,
-                                toDate: dateRange.toDate,
-                                completed: false,
-                                line: i,
-                                sourceDate: currentDate
-                            });
-                        }
-                        
-                        currentTasks.push({
-                            text: dateRange ? dateRange.text : taskText,
-                            completed: false,
-                            line: i,
-                            hasRange: !!dateRange,
-                            fromDate: dateRange ? dateRange.fromDate : null,
-                            toDate: dateRange ? dateRange.toDate : null
-                        });
-                    } else if (line.trim() && !line.match(/^\*\*|^##|^###/)) {
-                        // Include non-empty lines that aren't headers as notes
-                        currentTasks.push({
-                            text: line.trim(),
-                            completed: false,
-                            isNote: true,
-                            line: i
-                        });
-                    }
-                }
+            if (nextDate) {
+                if (currentDate && data[currentDate]) data[currentDate].lineEnd = i - 1;
+                currentDate = nextDate;
+                if (!data[currentDate]) data[currentDate] = { tasks: [], lineStart: i, lineEnd: i };
+                continue;
+            }
+            if (!currentDate) continue;
+            const task = this.parseTaskLine(line, i, currentDate);
+            if (task) { data[currentDate].tasks.push(task); allTasks.push(task); }
+            else if (line.trim() && !/^\s*(?:#{1,6}\s|\*\*)/.test(line)) {
+                data[currentDate].tasks.push({ text: line.trim(), isNote: true, line: i, sourceLine: i, sourceDate: currentDate, rawLine: line });
             }
         }
-
-        // Save last date's data
-        if (currentDate) {
-            data[currentDate] = {
-                tasks: currentTasks,
-                lineStart: currentLineStart,
-                lineEnd: lines.length - 1
-            };
-        }
-
+        if (currentDate && data[currentDate]) data[currentDate].lineEnd = lines.length - 1;
+        this.plannerData = data;
+        this.allTasks = allTasks;
+        this.rangeEntries = allTasks.filter(t => t.hasRange);
         return data;
     }
-
-    normalizeDate(dateStr) {
-        const { moment } = window;
-        
-        // Try DD/MM/YYYY format
-        let date = moment(dateStr, "DD/MM/YYYY", true);
-        if (date.isValid()) {
-            return date.format("YYYY-MM-DD");
-        }
-        
-        // Try YYYY-MM-DD format
-        date = moment(dateStr, "YYYY-MM-DD", true);
-        if (date.isValid()) {
-            return date.format("YYYY-MM-DD");
-        }
-        
-        return null;
+    async parsePlanner() {
+        const file = this.app.vault.getAbstractFileByPath(this.plannerPath);
+        if (!(file instanceof obsidian.TFile)) return this.parseContent("");
+        try { return this.parseContent(await this.app.vault.cachedRead(file)); }
+        catch (err) { console.error("[Planner] Unable to read planner", err); return this.parseContent(""); }
     }
-
     getDataForDate(date) {
-        const { moment } = window;
-        const dateKey = moment(date).format("YYYY-MM-DD");
-        const baseData = this.plannerData[dateKey] || { tasks: [] };
-        
-        // Find range entries that span this date
-        const rangeTasksForDate = this.rangeEntries.filter(entry => {
-            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
-            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
-            const targetDate = moment(dateKey, "YYYY-MM-DD");
-            return targetDate.isSameOrAfter(entryFrom) && targetDate.isSameOrBefore(entryTo);
-        }).map(entry => {
-            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
-            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
-            const targetDate = moment(dateKey, "YYYY-MM-DD");
-            
-            // Determine position in range (start, middle, end)
-            let rangePosition = 'middle';
-            if (targetDate.isSame(entryFrom, 'day')) {
-                rangePosition = 'start';
-            } else if (targetDate.isSame(entryTo, 'day')) {
-                rangePosition = 'end';
+        const key = plannerDateKey(date);
+        const base = this.plannerData[key] || { tasks: [] };
+        const moment = window.moment;
+        const target = moment(key, "YYYY-MM-DD", true);
+        const tasks = [];
+        // Include section notes; keep the physical source line for each task.
+        for (const note of base.tasks.filter(t => t.isNote)) tasks.push({ ...note });
+        for (const task of this.allTasks) {
+            const from = task.hasRange && moment(task.fromDate, "YYYY-MM-DD", true);
+            const to = task.hasRange && moment(task.toDate, "YYYY-MM-DD", true);
+            const inRange = task.hasRange && target.isBetween(from, to, "day", "[]");
+            const occurs = task.recurrence !== "none"
+                ? plannerDateOccurs(task, key)
+                : task.hasRange ? inRange : task.sourceDate === key;
+            if (!occurs) continue;
+            let position = null;
+            if (inRange) position = key === task.fromDate ? "start" : key === task.toDate ? "end" : "middle";
+            tasks.push({ ...task,
+                originalCompleted: task.completed,
+                occurrenceDate: key,
+                completed: task.recurrence !== "none" && key !== task.sourceDate
+                    ? task.doneDates.includes(key) : task.completed,
+                isRecurringInstance: task.recurrence !== "none" && key !== task.sourceDate,
+                isRangeEntry: task.hasRange && key !== task.sourceDate,
+                rangePosition: position
+            });
+        }
+        // Keep notes and tasks in their original order for the source date;
+        // generated occurrences follow, ordered by their scheduled time.
+        const physical = tasks.filter(t => t.sourceDate === key).sort((a, b) => a.line - b.line);
+        const derived = tasks.filter(t => t.sourceDate !== key).sort((a, b) =>
+            (a.startMinutes ?? 9999) - (b.startMinutes ?? 9999) || a.sourceDate.localeCompare(b.sourceDate));
+        return { ...base, tasks: [...physical, ...derived], hasRangeEntries: tasks.some(t => t.hasRange) };
+    }
+    getRangeEntriesForDate(date) { return this.getDataForDate(date).tasks.filter(t => t.hasRange); }
+    hasDataForDate(date) { return this.getDataForDate(date).tasks.length > 0; }
+    getTaskCountForDate(date) { return this.getDataForDate(date).tasks.filter(t => !t.isNote).length; }
+    getIncompleteTaskCountForDate(date) { return this.getDataForDate(date).tasks.filter(t => !t.isNote && !t.completed).length; }
+    async mutate(mutator) {
+        let file = this.app.vault.getAbstractFileByPath(this.plannerPath);
+        if (!file) { await this.app.vault.create(this.plannerPath, ""); file = this.app.vault.getAbstractFileByPath(this.plannerPath); }
+        if (!(file instanceof obsidian.TFile)) throw new Error(`Not a file: ${this.plannerPath}`);
+        // process() avoids lost updates when multiple windows modify the same planner.
+        if (typeof this.app.vault.process === "function") {
+            await this.app.vault.process(file, data => mutator(data));
+        } else {
+            await this.app.vault.modify(file, mutator(await this.app.vault.read(file)));
+        }
+        await this.parsePlanner();
+    }
+    findLine(lines, task) {
+        if (task.id) {
+            const matches = lines.map((line, index) => line.includes(`[pid:: ${task.id}]`) ? index : -1)
+                .filter(index => index >= 0);
+            if (matches.length === 1) return matches[0];
+            if (matches.length > 1) throw new Error("Duplicate task identifiers found. Please fix the planner file before editing.");
+        }
+        if (lines[task.sourceLine] === task.rawLine) return task.sourceLine;
+        const matches = lines.map((line, index) => line === task.rawLine ? index : -1).filter(n => n !== -1);
+        if (matches.length === 1) return matches[0];
+        throw new Error("Task changed in the planner file. Reopen the day view and try again.");
+    }
+    makeTaskLine(model, original = null) {
+        const title = String(model.text || "").replace(/[\r\n]+/g, " ").trim();
+        if (!title) throw new Error("Task title is required.");
+        const start = plannerTimeToMinutes(model.startTime);
+        const end = plannerTimeToMinutes(model.endTime);
+        if ((model.startTime || model.endTime) && (start === null || end === null || end <= start))
+            throw new Error("Choose a valid start and end time, with the end after the start.");
+        const from = this.normalizeDate(model.fromDate || "");
+        const to = this.normalizeDate(model.toDate || "");
+        if (model.multiDay && (!from || !to || to < from)) throw new Error("Choose a valid multi-day range.");
+        const repeat = PLANNER_REPEAT_VALUES.includes(model.repeat) ? model.repeat : "none";
+        if (model.multiDay && repeat !== "none") throw new Error("An entry cannot be both recurring and multi-day.");
+        const every = repeat === "weekdays" ? 1 : Math.max(1, Math.min(365, Number(model.every) || 1));
+        const until = this.normalizeDate(model.until || "");
+        if (repeat !== "none" && model.until && !until) throw new Error("Repeat end date is invalid.");
+        if (repeat !== "none" && until && until < (original?.sourceDate || model.dateKey))
+            throw new Error("Repeat end date cannot precede the first occurrence.");
+        const id = original?.id || `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 9)}`;
+        const done = original?.doneDates || [];
+        const except = original?.exceptions || [];
+        const donePrefix = (original?.originalCompleted ?? original?.completed) ? "- [x] " : "- [ ] ";
+        let line = donePrefix;
+        if (start !== null) line += `${plannerMinutesToTime(start)} - ${plannerMinutesToTime(end)} `;
+        line += title;
+        if (model.multiDay) {
+            const m = window.moment;
+            line += ` [${m(from).format("DD/MM/YYYY")} - ${m(to).format("DD/MM/YYYY")}]`;
+        }
+        if (repeat !== "none") {
+            line += ` [repeat:: ${repeat}]`;
+            if (every > 1) line += ` [every:: ${every}]`;
+            if (until) line += ` [until:: ${until}]`;
+            if (done.length) line += ` [done:: ${done.join(", ")}]`;
+            if (except.length) line += ` [except:: ${except.join(", ")}]`;
+        }
+        return line + ` [pid:: ${id}]`;
+    }
+    async saveTask(date, model, original = null) {
+        const dateKey = plannerDateKey(date);
+        const serialized = this.makeTaskLine({ ...model, dateKey }, original);
+        await this.mutate(content => {
+            const lines = content.split("\n");
+            if (original) { lines[this.findLine(lines, original)] = serialized; return lines.join("\n"); }
+            let insertAt = -1;
+            let foundDate = false;
+            for (let i = 0; i < lines.length; i++) {
+                for (const p of PLANNER_DATE_PATTERNS) {
+                    const found = lines[i].match(p);
+                    if (found && this.normalizeDate(found[1]) === dateKey) { foundDate = true; insertAt = i + 1; }
+                    else if (found && foundDate) { lines.splice(i, 0, serialized); return lines.join("\n"); }
+                }
             }
-            
-            return {
-                ...entry,
-                isRangeEntry: true,
-                rangePosition,
-                isFromSourceDate: entry.sourceDate === dateKey
-            };
-        });
-        
-        // Combine base tasks with range tasks (avoid duplicates)
-        const allTasks = [...baseData.tasks];
-        
-        // Add range tasks that aren't from this date's source
-        rangeTasksForDate.forEach(rangeTask => {
-            if (!rangeTask.isFromSourceDate) {
-                allTasks.push(rangeTask);
-            }
-        });
-        
-        return {
-            ...baseData,
-            tasks: allTasks,
-            hasRangeEntries: rangeTasksForDate.length > 0
-        };
-    }
-
-    // Get range entries for a specific date (for visual display)
-    getRangeEntriesForDate(date) {
-        const { moment } = window;
-        const dateKey = moment(date).format("YYYY-MM-DD");
-        
-        return this.rangeEntries.filter(entry => {
-            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
-            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
-            const targetDate = moment(dateKey, "YYYY-MM-DD");
-            return targetDate.isSameOrAfter(entryFrom) && targetDate.isSameOrBefore(entryTo);
-        }).map(entry => {
-            const entryFrom = moment(entry.fromDate, "YYYY-MM-DD");
-            const entryTo = moment(entry.toDate, "YYYY-MM-DD");
-            const targetDate = moment(dateKey, "YYYY-MM-DD");
-            
-            let rangePosition = 'middle';
-            if (targetDate.isSame(entryFrom, 'day')) {
-                rangePosition = 'start';
-            } else if (targetDate.isSame(entryTo, 'day')) {
-                rangePosition = 'end';
-            }
-            
-            return {
-                ...entry,
-                rangePosition
-            };
+            if (foundDate) { lines.splice(lines.length, 0, serialized); return lines.join("\n"); }
+            const configuredFormat = get_store_value(settings).dateFormat === "YYYY-MM-DD" ? "YYYY-MM-DD" : "DD/MM/YYYY";
+            const section = `**${window.moment(date).format(configuredFormat)}**`;
+            return content.replace(/\s*$/, "") + `\n\n${section}\n${serialized}\n`;
         });
     }
-
-    hasDataForDate(date) {
-        const data = this.getDataForDate(date);
-        return data && data.tasks && data.tasks.length > 0;
-    }
-
-    getTaskCountForDate(date) {
-        const data = this.getDataForDate(date);
-        if (!data || !data.tasks) return 0;
-        return data.tasks.filter(t => !t.isNote).length;
-    }
-
-    getIncompleteTaskCountForDate(date) {
-        const data = this.getDataForDate(date);
-        if (!data || !data.tasks) return 0;
-        return data.tasks.filter(t => !t.isNote && !t.completed).length;
-    }
-
     async addEntryForDate(date, text, fromDate = null, toDate = null) {
-        const { vault } = this.app;
-        const { moment } = window;
-        const plannerFile = vault.getAbstractFileByPath(this.plannerPath);
-        const dateStr = moment(date).format("DD/MM/YYYY");
-        const dateKey = moment(date).format("YYYY-MM-DD");
-        
-        let content = "";
-        
-        if (plannerFile && plannerFile instanceof obsidian__default['default'].TFile) {
-            content = await vault.read(plannerFile);
-        }
-
-        const existingData = this.plannerData[dateKey];
-        
-        // Format the task text with date range if provided
-        let taskText = text;
-        if (fromDate && toDate) {
-            const fromStr = moment(fromDate).format("DD/MM");
-            const toStr = moment(toDate).format("DD/MM");
-            taskText = `${text} [${fromStr} - ${toStr}]`;
-        }
-        
-        if (existingData) {
-            // Add to existing date section
-            const lines = content.split('\n');
-            const insertLine = existingData.lineEnd + 1;
-            const taskNum = existingData.tasks.filter(t => !t.isNote).length + 1;
-            const newTaskLine = `${taskNum}) ${taskText}`;
-            lines.splice(insertLine, 0, newTaskLine);
-            content = lines.join('\n');
-        } else {
-            // Create new date section
-            const newSection = `\n**${dateStr}**\n1) ${taskText}\n`;
-            content = content + newSection;
-        }
-
-        if (plannerFile && plannerFile instanceof obsidian__default['default'].TFile) {
-            await vault.modify(plannerFile, content);
-        } else {
-            await vault.create(this.plannerPath, content);
-        }
-
-        // Re-parse the planner
-        await this.parsePlanner();
+        const model = { text, dateKey: plannerDateKey(date), startTime: "", endTime: "", repeat: "none", multiDay: !!(fromDate && toDate),
+            fromDate: fromDate && plannerDateKey(fromDate), toDate: toDate && plannerDateKey(toDate) };
+        return this.saveTask(date, model);
     }
-
-    async toggleTaskCompletion(date, taskIndex) {
-        const { vault } = this.app;
-        const { moment } = window;
-        const plannerFile = vault.getAbstractFileByPath(this.plannerPath);
-        const dateKey = moment(date).format("YYYY-MM-DD");
-        
-        if (!plannerFile || !(plannerFile instanceof obsidian__default['default'].TFile)) return;
-        
-        const data = this.plannerData[dateKey];
-        if (!data || !data.tasks[taskIndex]) return;
-        
-        const task = data.tasks[taskIndex];
-        const content = await vault.read(plannerFile);
-        const lines = content.split('\n');
-        
-        const line = lines[task.line];
-        let newLine;
-        
-        // Check for incomplete checkbox: [ ] -> [x]
-        if (/\[[ ]\]/.test(line)) {
-            newLine = line.replace(/\[[ ]\]/, '[x]');
-        }
-        // Check for completed checkbox: [x] -> [ ]
-        else if (/\[[xX]\]/.test(line)) {
-            newLine = line.replace(/\[[xX]\]/, '[ ]');
-        }
-        // Convert numbered/bullet list to checkbox
-        else {
-            newLine = line.replace(/^(\s*)(?:(\d+)\)|[-*])\s*/, '$1- [x] ');
-        }
-        
-        lines[task.line] = newLine;
-        await vault.modify(plannerFile, lines.join('\n'));
-        await this.parsePlanner();
+    async toggleTaskCompletion(date, indexOrTask) {
+        const key = plannerDateKey(date);
+        const task = typeof indexOrTask === "number" ? this.getDataForDate(date).tasks[indexOrTask] : indexOrTask;
+        if (!task || task.isNote) return;
+        await this.mutate(content => {
+            const lines = content.split("\n");
+            const index = this.findLine(lines, task);
+            if (task.recurrence !== "none" && key !== task.sourceDate) {
+                let next = lines[index].replace(/\s*\[done::\s*[^\]]*\]/i, "");
+                const done = new Set(task.doneDates);
+                if (done.has(key)) done.delete(key); else done.add(key);
+                if (done.size) next += ` [done:: ${[...done].sort().join(", ")}]`;
+                lines[index] = next;
+            } else {
+                let line = lines[index];
+                if (/\[([ xX])\]/.test(line)) line = line.replace(/\[([ xX])\]/, task.completed ? "[ ]" : "[x]");
+                else line = line.replace(/^(\s*)(?:\d+[.)]|[-*])\s+/, "$1- [x] ");
+                lines[index] = line;
+            }
+            return lines.join("\n");
+        });
+    }
+    async deleteTask(task, occurrenceDate = null, onlyOccurrence = false) {
+        await this.mutate(content => {
+            const lines = content.split("\n");
+            const index = this.findLine(lines, task);
+            const key = occurrenceDate && plannerDateKey(occurrenceDate);
+            if (onlyOccurrence && task.recurrence !== "none" && key) {
+                let line = lines[index].replace(/\s*\[except::\s*[^\]]*\]/i, "");
+                const except = new Set(task.exceptions); except.add(key);
+                line += ` [except:: ${[...except].sort().join(", ")}]`;
+                lines[index] = line;
+            } else lines.splice(index, 1);
+            return lines.join("\n");
+        });
     }
 }
 
@@ -768,6 +679,11 @@ const defaultSettings = Object.freeze({
     plannerPath: DEFAULT_PLANNER_PATH,
     dateFormat: "DD/MM/YYYY",
     maxEntriesPerDay: 3,
+    dayStartHour: 6,
+    dayEndHour: 23,
+    timelineHourHeight: 76,
+    defaultTaskMinutes: 60,
+    plannerViewSpan: 1,
 });
 
 class CalendarSettingsTab extends obsidian.PluginSettingTab {
@@ -797,15 +713,12 @@ class CalendarSettingsTab extends obsidian.PluginSettingTab {
 
         new obsidian.Setting(this.containerEl)
             .setName("Date format")
-            .setDesc("Format for dates in your planner (e.g., DD/MM/YYYY or YYYY-MM-DD)")
-            .addText((textfield) => {
-                textfield.setPlaceholder("DD/MM/YYYY");
-                textfield.setValue(this.plugin.options.dateFormat || "DD/MM/YYYY");
-                textfield.onChange(async (value) => {
-                    this.plugin.writeOptions(() => ({
-                        dateFormat: value || "DD/MM/YYYY",
-                    }));
-                });
+            .setDesc("Format used when creating a new planner date section")
+            .addDropdown(drop => {
+                drop.addOption("DD/MM/YYYY", "DD/MM/YYYY");
+                drop.addOption("YYYY-MM-DD", "YYYY-MM-DD");
+                drop.setValue(this.plugin.options.dateFormat === "YYYY-MM-DD" ? "YYYY-MM-DD" : "DD/MM/YYYY");
+                drop.onChange(async value => { await this.plugin.writeOptions(() => ({ dateFormat: value })); });
             });
 
         new obsidian.Setting(this.containerEl)
@@ -820,6 +733,39 @@ class CalendarSettingsTab extends obsidian.PluginSettingTab {
                         maxEntriesPerDay: value,
                     }));
                 });
+            });
+
+        this.containerEl.createEl("h3", { text: "Day View" });
+        new obsidian.Setting(this.containerEl)
+            .setName("First visible hour")
+            .setDesc("The timeline expands automatically for earlier tasks.")
+            .addDropdown(drop => {
+                for (let h = 0; h <= 22; h++) drop.addOption(String(h), `${String(h).padStart(2, "0")}:00`);
+                drop.setValue(String(this.plugin.options.dayStartHour ?? 6));
+                drop.onChange(async value => { await this.plugin.writeOptions(() => ({ dayStartHour: Number(value) })); });
+            });
+        new obsidian.Setting(this.containerEl)
+            .setName("Last visible hour")
+            .setDesc("The timeline expands automatically for later tasks.")
+            .addDropdown(drop => {
+                for (let h = 1; h <= 24; h++) drop.addOption(String(h), `${String(h).padStart(2, "0")}:00`);
+                drop.setValue(String(this.plugin.options.dayEndHour ?? 23));
+                drop.onChange(async value => { await this.plugin.writeOptions(() => ({ dayEndHour: Number(value) })); });
+            });
+        new obsidian.Setting(this.containerEl)
+            .setName("Timeline hour height")
+            .setDesc("Spacing between hour markers in pixels (44–120).")
+            .addSlider(slider => {
+                slider.setLimits(44, 120, 4).setValue(this.plugin.options.timelineHourHeight ?? 76).setDynamicTooltip();
+                slider.onChange(async val => { await this.plugin.writeOptions(() => ({ timelineHourHeight: val })); });
+            });
+        new obsidian.Setting(this.containerEl)
+            .setName("Default task duration")
+            .setDesc("Length of a new timed task in minutes.")
+            .addDropdown(drop => {
+                for (const mins of [15, 30, 45, 60, 90, 120]) drop.addOption(String(mins), `${mins} minutes`);
+                drop.setValue(String(this.plugin.options.defaultTaskMinutes ?? 60));
+                drop.onChange(async val => { await this.plugin.writeOptions(() => ({ defaultTaskMinutes: Number(val) })); });
             });
 
         this.containerEl.createEl("h3", {
@@ -1072,8 +1018,8 @@ class PlannerDayModal extends obsidian.Modal {
             const text = input.value.trim();
             if (text) {
                 if (rangeCheckbox.checked) {
-                    const fromDate = fromInput.value ? new Date(fromInput.value) : null;
-                    const toDate = toInput.value ? new Date(toInput.value) : null;
+                    const fromDate = fromInput.value ? window.moment(fromInput.value, 'YYYY-MM-DD', true) : null;
+                    const toDate = toInput.value ? window.moment(toInput.value, 'YYYY-MM-DD', true) : null;
                     await this.parser.addEntryForDate(this.date, text, fromDate, toDate);
                 } else {
                     await this.parser.addEntryForDate(this.date, text);
@@ -4051,12 +3997,627 @@ class Calendar extends SvelteComponent$1 {
 }
 
 // ============================================
+// FULL DAY VIEW + TASK EDITOR
+// ============================================
+const VIEW_TYPE_PLANNER_DAY = "calendar-planner-day";
+
+function plannerEl(parent, tag, cls, label) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (label !== undefined) node.textContent = label;
+    parent.appendChild(node);
+    return node;
+}
+function plannerIconButton(parent, icon, label, onClick, extra = "") {
+    const button = plannerEl(parent, "button", `planner-ui-btn ${extra}`.trim());
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    if (typeof obsidian.setIcon === "function") obsidian.setIcon(button, icon);
+    else button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
+}
+function plannerField(parent, title, type, value, attrs = {}) {
+    const row = plannerEl(parent, "label", "planner-field");
+    plannerEl(row, "span", "planner-field-label", title);
+    const input = plannerEl(row, type === "select" ? "select" : "input", "planner-field-input");
+    if (type !== "select") input.type = type;
+    if (value !== undefined && value !== null) input.value = value;
+    for (const [key, val] of Object.entries(attrs)) input.setAttribute(key, val);
+    return input;
+}
+function plannerWeekdayName(day) { return window.moment(day).format("ddd"); }
+function plannerTaskTime(task) {
+    return task.startMinutes === null ? "" : `${plannerMinutesToTime(task.startMinutes)}–${plannerMinutesToTime(task.endMinutes)}`;
+}
+
+// Drag selection uses 15-minute boundaries. Floor the earlier endpoint and ceil
+// the later endpoint, so dragging in either direction yields the same interval.
+// The planner's Markdown parser represents the last minute as 23:59 (not 24:00).
+function plannerDragTimeRange(anchorMinute, cursorMinute, step = 15) {
+    const lower = Math.max(0, Math.min(1439, Math.min(anchorMinute, cursorMinute)));
+    const upper = Math.max(0, Math.min(1440, Math.max(anchorMinute, cursorMinute)));
+    const start = Math.min(1425, Math.floor(lower / step) * step);
+    const end = Math.min(1439, Math.max(start + step, Math.ceil(upper / step) * step));
+    return { start, end };
+}
+
+class PlannerTaskEditorModal extends obsidian.Modal {
+    constructor(plugin, date, task = null, defaults = {}) {
+        super(plugin.app);
+        this.plugin = plugin;
+        this.parser = getPlannerParser(plugin.app);
+        this.date = window.moment(date);
+        this.task = task;
+        this.defaults = defaults;
+        this.saving = false;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass("planner-editor");
+        this.titleEl.setText(this.task ? (this.task.recurrence !== "none" ? "Edit recurring series" : "Edit task") : "New task");
+        plannerEl(contentEl, "p", "planner-editor-date", `Date: ${this.date.format("dddd, D MMMM YYYY")}`);
+        if (this.task && this.task.recurrence !== "none") {
+            plannerEl(contentEl, "p", "planner-editor-hint",
+                `Editing the series starting ${window.moment(this.task.sourceDate).format("D MMM YYYY")}. Completion stays separate for each occurrence.`);
+        }
+        const form = plannerEl(contentEl, "form", "planner-editor-form");
+        const title = plannerField(form, "Task", "text", this.task?.text || "", { placeholder: "What are you planning?", required: "" });
+        title.maxLength = 500;
+        const times = plannerEl(form, "div", "planner-form-pair");
+        const start = plannerField(times, "Start time", "time", this.task?.startMinutes !== null && this.task?.startMinutes !== undefined
+            ? plannerMinutesToTime(this.task.startMinutes) : this.defaults.startTime || "");
+        const end = plannerField(times, "End time", "time", this.task?.endMinutes !== null && this.task?.endMinutes !== undefined
+            ? plannerMinutesToTime(this.task.endMinutes) : this.defaults.endTime || "");
+        start.addEventListener("change", () => {
+            if (start.value && !end.value) {
+                const minutes = plannerTimeToMinutes(start.value);
+                const next = minutes + (this.plugin.options.defaultTaskMinutes || 60);
+                if (next < 1440) end.value = plannerMinutesToTime(next);
+            }
+        });
+        plannerEl(form, "p", "planner-form-help", "Leave both times empty for an unscheduled task.");
+        const repeatGroup = plannerEl(form, "div", "planner-form-pair");
+        const repeat = plannerField(repeatGroup, "Repeat", "select");
+        for (const [val, label] of [["none", "Does not repeat"], ["daily", "Every day"], ["weekdays", "Weekdays (Mon–Fri)"],
+            ["weekly", "Every week"], ["monthly", "Every month"], ["yearly", "Every year"]]) {
+            const option = plannerEl(repeat, "option", "", label); option.value = val;
+        }
+        repeat.value = this.task?.recurrence || "none";
+        const every = plannerField(repeatGroup, "Every N periods", "number", String(this.task?.every || 1), { min: "1", max: "365", step: "1" });
+        const until = plannerField(form, "Repeat until (optional)", "date", this.task?.until || "");
+        const rangeToggleRow = plannerEl(form, "label", "planner-checkbox-row");
+        const rangeToggle = plannerEl(rangeToggleRow, "input"); rangeToggle.type = "checkbox";
+        rangeToggle.checked = !!this.task?.hasRange;
+        plannerEl(rangeToggleRow, "span", "", "Multi-day event (date range)");
+        const rangeFields = plannerEl(form, "div", "planner-form-pair");
+        const fromDate = plannerField(rangeFields, "From", "date", this.task?.fromDate || this.date.format("YYYY-MM-DD"));
+        const toDate = plannerField(rangeFields, "To", "date", this.task?.toDate || this.date.clone().add(1, "day").format("YYYY-MM-DD"));
+        function updateVisibility() {
+            every.closest("label").hidden = repeat.value === "none" || repeat.value === "weekdays";
+            until.closest("label").hidden = repeat.value === "none";
+            rangeFields.hidden = !rangeToggle.checked;
+            rangeToggleRow.hidden = repeat.value !== "none";
+            repeatGroup.hidden = rangeToggle.checked;
+            if (repeat.value !== "none") rangeToggle.checked = false;
+        }
+        repeat.addEventListener("change", updateVisibility);
+        rangeToggle.addEventListener("change", updateVisibility);
+        updateVisibility();
+        const buttons = plannerEl(form, "div", "planner-editor-actions");
+        const cancel = plannerEl(buttons, "button", "planner-ui-btn", "Cancel"); cancel.type = "button";
+        cancel.addEventListener("click", () => this.close());
+        if (this.task) {
+            const del = plannerEl(buttons, "button", "planner-ui-btn planner-btn-danger", "Delete…"); del.type = "button";
+            del.addEventListener("click", () => this.confirmDeletion());
+        }
+        const submit = plannerEl(buttons, "button", "planner-ui-btn mod-cta", this.task ? "Save changes" : "Create task");
+        submit.type = "submit";
+        form.addEventListener("submit", async e => {
+            e.preventDefault();
+            if (this.saving) return;
+            try {
+                this.saving = true; submit.disabled = true;
+                const taskDate = this.task ? window.moment(this.task.sourceDate) : this.date;
+                await this.parser.saveTask(taskDate, {
+                    text: title.value.trim(), startTime: start.value, endTime: end.value,
+                    repeat: repeat.value, every: Number(every.value), until: until.value,
+                    multiDay: rangeToggle.checked, fromDate: fromDate.value, toDate: toDate.value
+                }, this.task);
+                this.plugin.refreshPlannerViews();
+                this.close();
+            } catch (error) {
+                new obsidian.Notice(error.message || "Could not save task.");
+                console.error("[Planner] Save failed", error);
+            } finally { this.saving = false; submit.disabled = false; }
+        });
+        setTimeout(() => title.focus(), 0);
+    }
+    confirmDeletion() {
+        const task = this.task;
+        const dialog = new obsidian.Modal(this.app);
+        dialog.titleEl.setText("Delete task?");
+        const body = dialog.contentEl;
+        body.empty();
+        plannerEl(body, "p", "", `Delete “${task.text}”?`);
+        const buttons = plannerEl(body, "div", "planner-editor-actions");
+        if (task.recurrence !== "none") {
+            const skip = plannerEl(buttons, "button", "planner-ui-btn", "Skip this date");
+            skip.addEventListener("click", async () => {
+                try {
+                    await this.parser.deleteTask(task, this.date, true);
+                    dialog.close(); this.close(); this.plugin.refreshPlannerViews();
+                } catch (err) { new obsidian.Notice(err.message); }
+            });
+        }
+        const cancel = plannerEl(buttons, "button", "planner-ui-btn", "Cancel");
+        cancel.addEventListener("click", () => dialog.close());
+        const remove = plannerEl(buttons, "button", "planner-ui-btn planner-btn-danger", task.recurrence !== "none" ? "Delete entire series" : "Delete task");
+        remove.addEventListener("click", async () => {
+            try {
+                await this.parser.deleteTask(task);
+                dialog.close(); this.close(); this.plugin.refreshPlannerViews();
+            } catch (err) { new obsidian.Notice(err.message); }
+        });
+        dialog.open();
+    }
+}
+
+function plannerPartitionOverlaps(tasks) {
+    const sorted = [...tasks].sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
+    const groups = [];
+    let current = [], groupEnd = -1;
+    for (const task of sorted) {
+        if (current.length && task.startMinutes >= groupEnd) {
+            groups.push(current); current = []; groupEnd = -1;
+        }
+        current.push(task);
+        groupEnd = Math.max(groupEnd, task.endMinutes);
+    }
+    if (current.length) groups.push(current);
+    const layout = new Map();
+    for (const group of groups) {
+        const lanes = [];
+        for (const task of group) {
+            let lane = lanes.findIndex(end => end <= task.startMinutes);
+            if (lane < 0) { lane = lanes.length; lanes.push(task.endMinutes); }
+            else lanes[lane] = task.endMinutes;
+            layout.set(task, { lane, laneCount: 1 });
+        }
+        for (const task of group) layout.get(task).laneCount = lanes.length;
+    }
+    return layout;
+}
+
+// One view type with three layouts. One week is always Mon–Sun; three days
+// begin on the selected date. Navigation moves by the visible interval.
+class PlannerDayView extends obsidian.ItemView {
+    constructor(leaf, plugin) {
+        super(leaf);
+        this.plugin = plugin;
+        this.parser = getPlannerParser(this.app);
+        this.date = window.moment(plugin.selectedPlannerDate || undefined).startOf("day");
+        this.spanDays = [1, 3, 7].includes(Number(plugin.options?.plannerViewSpan))
+            ? Number(plugin.options.plannerViewSpan) : 1;
+        this.hideCompleted = false;
+        this.scrollInitialised = false;
+        this.minuteTimer = null;
+        this.nowLines = [];
+        this.activeSelection = null;
+        this.registerEvent(this.app.vault.on("modify", file => this.onPlannerFileChange(file)));
+        this.registerEvent(this.app.vault.on("create", file => this.onPlannerFileChange(file)));
+        this.registerEvent(this.app.vault.on("delete", file => this.onPlannerFileChange(file)));
+    }
+    getViewType() { return VIEW_TYPE_PLANNER_DAY; }
+    getDisplayText() { return "Day Planner"; }
+    getIcon() { return "calendar-clock"; }
+    async onOpen() {
+        await this.parser.parsePlanner();
+        this.render();
+        this.minuteTimer = window.setInterval(() => this.updateNowLine(), 30000);
+    }
+    async onClose() {
+        this.cancelTimeSelection();
+        if (this.minuteTimer) window.clearInterval(this.minuteTimer);
+        this.minuteTimer = null;
+        this.nowLines = [];
+        this.contentEl.empty();
+    }
+    async onPlannerFileChange(file) {
+        if (file.path !== this.parser.plannerPath) return;
+        await this.parser.parsePlanner();
+        this.render();
+    }
+    getVisibleDates() {
+        const first = this.spanDays === 7 ? this.date.clone().startOf("isoWeek") : this.date.clone();
+        return Array.from({ length: this.spanDays }, (_, i) => first.clone().add(i, "day"));
+    }
+    setDate(date) {
+        const next = window.moment(date);
+        if (!next.isValid()) return;
+        this.date = next.startOf("day");
+        this.plugin.selectedPlannerDate = this.date.format("YYYY-MM-DD");
+        this.scrollInitialised = false;
+        if (this.contentEl.isConnected) this.render();
+    }
+    setSpan(days) {
+        if (![1, 3, 7].includes(days) || this.spanDays === days) return;
+        this.spanDays = days;
+        this.scrollInitialised = false;
+        // Write through plugin settings, retaining mode across app restarts.
+        this.plugin.writeOptions(() => ({ plannerViewSpan: days })).catch(error => {
+            console.error("[Planner] Could not persist planner view", error);
+            new obsidian.Notice("Could not save the planner layout preference.");
+        });
+        this.render();
+    }
+    openEditor(task = null, defaults = {}, date = this.date) {
+        const modal = new PlannerTaskEditorModal(this.plugin, date, task, defaults);
+        modal.open();
+    }
+    async setComplete(task, date) {
+        try {
+            await this.parser.toggleTaskCompletion(date, task);
+            await this.plugin.refreshPlannerViews();
+        } catch (err) { new obsidian.Notice(err.message || "Unable to update task"); }
+    }
+    getTasks(date) {
+        const all = this.parser.getDataForDate(date).tasks;
+        return { tasks: all.filter(t => !t.isNote), notes: all.filter(t => t.isNote) };
+    }
+    getTimelineBounds(days) {
+        const opts = this.plugin.options || {};
+        const scheduled = days.flatMap(d => this.getTasks(d).tasks)
+            .filter(task => task.startMinutes !== null);
+        const a = Number(opts.dayStartHour);
+        const b = Number(opts.dayEndHour);
+        const configuredStart = Number.isFinite(a) && a >= 0 && a < 24 ? a : 6;
+        const configuredEnd = Number.isFinite(b) && b > 0 && b <= 24 ? b : 23;
+        const earliest = scheduled.length ? Math.min(...scheduled.map(t => t.startMinutes)) : configuredStart * 60;
+        const latest = scheduled.length ? Math.max(...scheduled.map(t => t.endMinutes)) : configuredEnd * 60;
+        this.startHour = Math.max(0, Math.min(configuredStart, Math.floor(earliest / 60)));
+        this.endHour = Math.min(24, Math.max(this.startHour + 1, configuredEnd, Math.ceil(latest / 60)));
+        this.hourHeight = Math.min(120, Math.max(44, Number(opts.timelineHourHeight) || 76));
+        return (this.endHour - this.startHour) * this.hourHeight;
+    }
+    addHourLabels(parent) {
+        for (let hour = this.startHour; hour <= this.endHour; hour++) {
+            const line = plannerEl(parent, "div", "planner-hour-line");
+            line.style.top = `${(hour - this.startHour) * this.hourHeight}px`;
+            plannerEl(line, "span", "planner-hour-label", `${String(hour).padStart(2,"0")}:00`);
+        }
+    }
+    // A drag begins only on a free time slot, not on a task block. Global
+    // pointer listeners keep the selection going across hours and over blocks.
+    // Touch retains native vertical scrolling and the existing tap-to-add flow.
+    addHourHits(parent, date, multi = false) {
+        const preview = plannerEl(parent, "div", `planner-drag-selection${multi ? " planner-drag-selection-multi" : ""}`);
+        preview.hidden = true;
+        preview.setAttribute("aria-hidden", "true");
+        const previewLabel = plannerEl(preview, "span", "planner-drag-selection-label");
+        for (let hour = this.startHour; hour < this.endHour; hour++) {
+            const line = plannerEl(parent, "div", "planner-slot-line");
+            line.style.top = `${(hour - this.startHour) * this.hourHeight}px`;
+            if (multi) line.setAttribute("aria-hidden", "true");
+            const hit = plannerEl(parent, "button", `planner-hour-hit${multi ? " planner-hour-hit-multi" : ""}`);
+            hit.type = "button";
+            hit.style.top = `${(hour - this.startHour) * this.hourHeight}px`;
+            hit.style.height = `${this.hourHeight}px`;
+            hit.setAttribute("aria-label", `Click or drag to add task on ${date.format("dddd D MMMM")} at ${String(hour).padStart(2, "0")}:00`);
+            // The browser emits a click after pointerup, including after a drag.
+            // Ignore that one synthetic click or a second, wrong-duration dialog opens.
+            let suppressClick = false;
+            hit.addEventListener("pointerdown", e => {
+                if (e.button !== 0 || e.isPrimary === false || e.pointerType === "touch" || this.activeSelection) return;
+                this.beginTimeSelection(e, parent, date, preview, previewLabel, () => {
+                    suppressClick = true;
+                    window.setTimeout(() => { suppressClick = false; }, 0);
+                });
+            });
+            hit.addEventListener("click", e => {
+                if (suppressClick) { suppressClick = false; e.preventDefault(); return; }
+                const startMin = hour * 60;
+                const duration = Number(this.plugin.options?.defaultTaskMinutes) || 60;
+                const endMin = Math.min(startMin + duration, 1439);
+                this.openEditor(null, { startTime: plannerMinutesToTime(startMin), endTime: plannerMinutesToTime(endMin) }, date);
+            });
+        }
+    }
+    timeAtPointer(parent, clientY) {
+        const rect = parent.getBoundingClientRect();
+        const minutes = this.startHour * 60 + (clientY - rect.top) / this.hourHeight * 60;
+        return Math.max(this.startHour * 60, Math.min(this.endHour * 60, minutes));
+    }
+    beginTimeSelection(event, parent, date, preview, label, suppressClick) {
+        const scroll = parent.closest(".planner-day-scroll");
+        const selection = {
+            pointerId: event.pointerId, parent, date: date.clone(), preview, label, scroll,
+            startY: event.clientY, pointerY: event.clientY,
+            anchor: this.timeAtPointer(parent, event.clientY),
+            moved: false, frame: null, suppressClick, cleanup: []
+        };
+        this.activeSelection = selection;
+        const move = e => {
+            if (e.pointerId !== selection.pointerId || this.activeSelection !== selection) return;
+            selection.pointerY = e.clientY;
+            if (!selection.moved && Math.abs(e.clientY - selection.startY) >= 6) {
+                selection.moved = true;
+                this.contentEl.addClass("planner-is-selecting");
+            }
+            if (selection.moved) {
+                e.preventDefault();
+                this.updateTimeSelection(selection);
+                this.startSelectionAutoScroll(selection);
+            }
+        };
+        const end = e => {
+            if (e.pointerId !== selection.pointerId || this.activeSelection !== selection) return;
+            // A pointerup can be the first event after a fast drag.
+            selection.pointerY = e.clientY;
+            if (!selection.moved && Math.abs(e.clientY - selection.startY) >= 6) selection.moved = true;
+            if (selection.moved) {
+                const range = plannerDragTimeRange(selection.anchor, this.timeAtPointer(parent, e.clientY));
+                const defaults = { startTime: plannerMinutesToTime(range.start), endTime: plannerMinutesToTime(range.end) };
+                selection.suppressClick();
+                this.cancelTimeSelection();
+                this.openEditor(null, defaults, selection.date);
+            } else this.cancelTimeSelection(); // Allow the normal click-to-add.
+        };
+        const cancel = e => {
+            if (e && e.pointerId !== undefined && e.pointerId !== selection.pointerId) return;
+            this.cancelTimeSelection();
+        };
+        const onKey = e => { if (e.key === "Escape") cancel(); };
+        for (const [name, handler] of [["pointermove", move], ["pointerup", end], ["pointercancel", cancel], ["blur", cancel], ["keydown", onKey]]) {
+            window.addEventListener(name, handler);
+            selection.cleanup.push(() => window.removeEventListener(name, handler));
+        }
+    }
+    updateTimeSelection(selection) {
+        if (this.activeSelection !== selection) return;
+        const range = plannerDragTimeRange(selection.anchor, this.timeAtPointer(selection.parent, selection.pointerY));
+        selection.preview.hidden = false;
+        selection.preview.style.top = `${(range.start / 60 - this.startHour) * this.hourHeight}px`;
+        selection.preview.style.height = `${(range.end - range.start) / 60 * this.hourHeight}px`;
+        selection.label.textContent = `${plannerMinutesToTime(range.start)} – ${plannerMinutesToTime(range.end)}`;
+    }
+    startSelectionAutoScroll(selection) {
+        if (selection.frame !== null || !selection.scroll || typeof window.requestAnimationFrame !== "function") return;
+        const tick = () => {
+            selection.frame = null;
+            if (this.activeSelection !== selection || !selection.moved) return;
+            const bounds = selection.scroll.getBoundingClientRect();
+            const edge = 46;
+            const y = selection.pointerY;
+            let velocity = 0;
+            if (y >= bounds.bottom - edge && y <= bounds.bottom + 25) velocity = Math.min(20, 3 + (edge - (bounds.bottom - y)) / 2);
+            else if (y <= bounds.top + edge && y >= bounds.top - 25) velocity = -Math.min(20, 3 + (edge - (y - bounds.top)) / 2);
+            if (!velocity) return;
+            const before = selection.scroll.scrollTop;
+            selection.scroll.scrollTop += velocity;
+            if (selection.scroll.scrollTop === before) return; // Reached top or bottom.
+            this.updateTimeSelection(selection);
+            selection.frame = window.requestAnimationFrame(tick);
+        };
+        selection.frame = window.requestAnimationFrame(tick);
+    }
+    cancelTimeSelection() {
+        const selection = this.activeSelection;
+        if (!selection) return;
+        this.activeSelection = null;
+        for (const cleanup of selection.cleanup) cleanup();
+        if (selection.frame !== null && typeof window.cancelAnimationFrame === "function") window.cancelAnimationFrame(selection.frame);
+        selection.preview.hidden = true;
+        this.contentEl.toggleClass("planner-is-selecting", false);
+    }
+    addTimeBlocks(parent, tasks, date, isMulti = false) {
+        const layer = plannerEl(parent, "div", `planner-blocks-layer${isMulti ? " planner-blocks-multi" : ""}`);
+        const scheduled = tasks.filter(t => t.startMinutes !== null && (!this.hideCompleted || !t.completed));
+        const positions = plannerPartitionOverlaps(scheduled);
+        for (const task of scheduled) {
+            const position = positions.get(task);
+            const clampedStart = Math.max(this.startHour * 60, task.startMinutes);
+            const clampedEnd = Math.min(this.endHour * 60, task.endMinutes);
+            const block = plannerEl(layer, "div", `planner-time-block${task.completed ? " is-done" : ""}${task.recurrence !== "none" ? " is-recurring" : ""}`);
+            block.style.top = `${(clampedStart / 60 - this.startHour) * this.hourHeight + 2}px`;
+            block.style.height = `${Math.max(18, (clampedEnd - clampedStart) / 60 * this.hourHeight - 3)}px`;
+            block.style.left = `${position.lane / position.laneCount * 100}%`;
+            block.style.width = `${100 / position.laneCount}%`;
+            block.title = `${date.format("ddd D MMM")}: ${plannerTaskTime(task)} ${task.text}${task.recurrence !== "none" ? ` (repeats ${task.recurrence})` : ""}`;
+            const check = plannerEl(block, "input", "planner-block-checkbox");
+            check.type = "checkbox"; check.checked = !!task.completed;
+            check.setAttribute("aria-label", `Complete ${task.text} on ${date.format("D MMMM")}`);
+            check.addEventListener("click", event => event.stopPropagation());
+            check.addEventListener("change", () => this.setComplete(task, date));
+            const edit = plannerEl(block, "button", "planner-block-main");
+            edit.type = "button";
+            plannerEl(edit, "strong", "planner-block-title", task.text);
+            plannerEl(edit, "span", "planner-block-time", plannerTaskTime(task));
+            edit.addEventListener("click", () => this.openEditor(task, {}, date));
+            if (task.recurrence !== "none") plannerEl(block, "span", "planner-block-repeating", "↻");
+        }
+    }
+    addUnscheduled(parent, tasks, date, compact = false) {
+        const filtered = tasks.filter(t => t.startMinutes === null && (!this.hideCompleted || !t.completed));
+        const list = plannerEl(parent, "div", `planner-side-task-list${compact ? " planner-compact-list" : ""}`);
+        for (const task of filtered) {
+            const row = plannerEl(list, "div", `planner-side-task${task.completed ? " is-done" : ""}`);
+            const check = plannerEl(row, "input"); check.type = "checkbox"; check.checked = !!task.completed;
+            check.setAttribute("aria-label", `Complete ${task.text} on ${date.format("D MMMM")}`);
+            check.addEventListener("change", () => this.setComplete(task, date));
+            const edit = plannerEl(row, "button", "planner-side-task-title", task.text); edit.type = "button";
+            edit.title = task.text;
+            edit.addEventListener("click", () => this.openEditor(task, {}, date));
+            if (task.recurrence !== "none") plannerEl(row, "span", "planner-repeat-pill", "↻");
+            if (task.hasRange) plannerEl(row, "span", "planner-range-pill", "Multi-day");
+        }
+        return filtered.length;
+    }
+    addNowLine(grid, date, multi = false) {
+        const el = plannerEl(grid, "div", `planner-now-line${multi ? " planner-now-line-multi" : ""}`);
+        this.nowLines.push({ el, date: date.clone() });
+    }
+    renderSingle(root, date) {
+        const {tasks, notes} = this.getTasks(date);
+        const content = plannerEl(root, "div", "planner-day-content");
+        const panel = plannerEl(content, "section", "planner-day-timeline-panel");
+        const panelHeader = plannerEl(panel, "div", "planner-panel-header");
+        plannerEl(panelHeader, "h3", "", "Timeline");
+        plannerEl(panelHeader, "span", "planner-muted", "Click to add · drag to select a time range");
+        const scroll = plannerEl(panel, "div", "planner-day-scroll");
+        const height = this.getTimelineBounds([date]);
+        const grid = plannerEl(scroll, "div", "planner-time-grid");
+        grid.style.height = `${height}px`;
+        this.addHourLabels(grid);
+        this.addHourHits(grid, date);
+        this.addTimeBlocks(grid, tasks, date);
+        this.addNowLine(grid, date);
+        const side = plannerEl(content, "aside", "planner-day-sidebar");
+        const sideHeader = plannerEl(side, "div", "planner-panel-header");
+        plannerEl(sideHeader, "h3", "", "Unscheduled & all-day");
+        const count = this.addUnscheduled(side, tasks, date);
+        if (!count && !notes.length) plannerEl(side, "p", "planner-empty-state", "No unscheduled tasks for this date.");
+        if (notes.length) {
+            plannerEl(side, "h4", "planner-notes-heading", "Notes");
+            for (const note of notes) plannerEl(side, "p", "planner-note-entry", note.text);
+        }
+        const add = plannerEl(side, "button", "planner-ui-btn planner-side-add", "+ Add unscheduled task");
+        add.type = "button"; add.addEventListener("click", () => this.openEditor(null, {}, date));
+        return scroll;
+    }
+    renderMulti(root, dates) {
+        const content = plannerEl(root, "div", "planner-day-content planner-multi-content");
+        const panel = plannerEl(content, "section", "planner-day-timeline-panel planner-multi-panel");
+        const panelHeader = plannerEl(panel, "div", "planner-panel-header");
+        plannerEl(panelHeader, "h3", "", this.spanDays === 7 ? "Week timeline" : "3-day timeline");
+        plannerEl(panelHeader, "span", "planner-muted", "Click to add · drag to select start/end times · + adds all-day");
+        const scroll = plannerEl(panel, "div", "planner-day-scroll planner-multi-scroll");
+        const board = plannerEl(scroll, "div", `planner-multi-board planner-span-${this.spanDays}`);
+        board.style.setProperty("--planner-days", String(this.spanDays));
+        const head = plannerEl(board, "div", "planner-multi-header");
+        const corner = plannerEl(head, "div", "planner-multi-corner", "ALL DAY");
+        corner.title = "All-day and unscheduled tasks";
+        for (const date of dates) {
+            const { tasks, notes } = this.getTasks(date);
+            const cell = plannerEl(head, "div", `planner-multi-day-header${date.isSame(window.moment(), "day") ? " is-today" : ""}`);
+            const top = plannerEl(cell, "div", "planner-multi-day-heading");
+            const openDay = plannerEl(top, "button", "planner-multi-day-name"); openDay.type = "button";
+            const label = this.spanDays === 7 ? date.format("ddd D") : date.format("ddd D MMM");
+            openDay.textContent = label;
+            openDay.title = `Open ${date.format("dddd D MMMM YYYY")} in day view`;
+            openDay.addEventListener("click", () => { this.setDate(date); this.setSpan(1); });
+            plannerIconButton(top, "plus", `Add task on ${date.format("D MMMM")}`, () => this.openEditor(null, {}, date), "planner-small-add");
+            const allDay = plannerEl(cell, "div", "planner-multi-all-day");
+            const num = this.addUnscheduled(allDay, tasks, date, true);
+            if (notes.length) {
+                for (const note of notes) {
+                    const el = plannerEl(allDay, "p", "planner-multi-note", note.text);
+                    el.title = note.text;
+                }
+            }
+            if (!num && !notes.length) plannerEl(allDay, "span", "planner-multi-no-tasks", "No all-day tasks");
+        }
+        const height = this.getTimelineBounds(dates);
+        const grid = plannerEl(board, "div", "planner-multi-grid");
+        grid.style.height = `${height}px`;
+        const timeAxis = plannerEl(grid, "div", "planner-multi-time-axis");
+        this.addHourLabels(timeAxis);
+        for (const date of dates) {
+            const {tasks} = this.getTasks(date);
+            const column = plannerEl(grid, "div", `planner-multi-column${date.isSame(window.moment(), "day") ? " is-today" : ""}`);
+            column.setAttribute("aria-label", date.format("dddd D MMMM YYYY"));
+            this.addHourHits(column, date, true);
+            this.addTimeBlocks(column, tasks, date, true);
+            this.addNowLine(column, date, true);
+        }
+        return scroll;
+    }
+    render() {
+        const root = this.contentEl;
+        if (!root) return;
+        this.cancelTimeSelection();
+        const prevScroll = root.querySelector(".planner-day-scroll")?.scrollTop;
+        const prevHorizontal = root.querySelector(".planner-day-scroll")?.scrollLeft;
+        root.empty();
+        root.addClass("planner-day-root");
+        root.toggleClass("planner-in-multi", this.spanDays > 1);
+        const days = this.getVisibleDates();
+        const allTasks = days.flatMap(date => this.getTasks(date).tasks);
+        const completed = allTasks.filter(t => t.completed).length;
+        const toolbar = plannerEl(root, "header", "planner-day-toolbar");
+        const heading = plannerEl(toolbar, "div", "planner-heading");
+        plannerEl(heading, "div", "planner-eyebrow", "DAY PLANNER");
+        const mainTitle = this.spanDays === 7
+            ? `${days[0].format("D MMM")} – ${days[6].format("D MMM YYYY")}`
+            : this.spanDays === 3
+                ? `${days[0].format("D MMM")} – ${days[2].format("D MMM YYYY")}`
+                : this.date.format("dddd, D MMMM YYYY");
+        plannerEl(heading, "h2", "planner-day-title", mainTitle);
+        const nav = plannerEl(toolbar, "div", "planner-day-nav");
+        plannerIconButton(nav, "chevron-left", this.spanDays === 7 ? "Previous week" : "Previous period", () => this.setDate(this.date.clone().subtract(this.spanDays, "days")));
+        const picker = plannerEl(nav, "input", "planner-date-picker");
+        picker.type = "date"; picker.value = this.date.format("YYYY-MM-DD");
+        picker.setAttribute("aria-label", "Choose starting date");
+        picker.addEventListener("change", () => { if (picker.value) this.setDate(window.moment(picker.value, "YYYY-MM-DD", true)); });
+        const today = plannerEl(nav, "button", "planner-ui-btn", "Today"); today.type = "button";
+        today.addEventListener("click", () => this.setDate(window.moment()));
+        plannerIconButton(nav, "chevron-right", this.spanDays === 7 ? "Next week" : "Next period", () => this.setDate(this.date.clone().add(this.spanDays, "days")));
+        const actions = plannerEl(root, "div", "planner-day-actions");
+        const progress = plannerEl(actions, "div", "planner-progress");
+        plannerEl(progress, "span", "planner-progress-label", `${completed} of ${allTasks.length} tasks completed${this.spanDays > 1 ? ` across ${this.spanDays} days` : ""}`);
+        const track = plannerEl(progress, "div", "planner-progress-track");
+        const bar = plannerEl(track, "div", "planner-progress-bar");
+        bar.style.width = `${allTasks.length ? Math.round(100 * completed / allTasks.length) : 0}%`;
+        const buttons = plannerEl(actions, "div", "planner-actions-buttons");
+        const modes = plannerEl(buttons, "div", "planner-view-modes");
+        modes.setAttribute("role", "group"); modes.setAttribute("aria-label", "Timeline layout");
+        for (const [span, name] of [[1, "Day"], [3, "3 days"], [7, "Week"]]) {
+            const button = plannerEl(modes, "button", `planner-mode-btn${this.spanDays === span ? " is-active" : ""}`, name);
+            button.type = "button"; button.setAttribute("aria-pressed", String(this.spanDays === span));
+            button.addEventListener("click", () => this.setSpan(span));
+        }
+        const hide = plannerEl(buttons, "button", `planner-ui-btn ${this.hideCompleted ? "is-active" : ""}`, this.hideCompleted ? "Show completed" : "Hide completed");
+        hide.type = "button"; hide.setAttribute("aria-pressed", String(this.hideCompleted));
+        hide.addEventListener("click", () => { this.hideCompleted = !this.hideCompleted; this.render(); });
+        plannerIconButton(buttons, "file-text", "Open planner Markdown", () => this.plugin.openPlannerFile());
+        const add = plannerEl(buttons, "button", "planner-ui-btn mod-cta", "+ New task"); add.type = "button";
+        add.title = this.spanDays === 7 ? "Add a task on the selected date (use each column's + to choose a day)" : "Add a task on the selected date";
+        add.addEventListener("click", () => this.openEditor(null, {}, this.date));
+        this.nowLines = [];
+        const scroll = this.spanDays === 1 ? this.renderSingle(root, days[0]) : this.renderMulti(root, days);
+        this.updateNowLine();
+        if (this.scrollInitialised && prevScroll != null) {
+            scroll.scrollTop = prevScroll;
+            if (prevHorizontal != null) scroll.scrollLeft = prevHorizontal;
+        } else {
+            const current = window.moment();
+            const reference = days.some(d => d.isSame(current, "day")) ? current.hours() * 60 + current.minutes() : 9 * 60;
+            scroll.scrollTop = Math.max(0, (reference / 60 - this.startHour) * this.hourHeight - 150);
+        }
+        this.scrollInitialised = true;
+    }
+    updateNowLine() {
+        const current = window.moment();
+        const minute = current.hours() * 60 + current.minutes() + current.seconds() / 60;
+        for (const {el, date} of this.nowLines) {
+            const visible = date.isSame(current, "day") && minute >= this.startHour * 60 && minute <= this.endHour * 60;
+            el.style.display = visible ? "block" : "none";
+            if (visible) el.style.top = `${(minute / 60 - this.startHour) * this.hourHeight}px`;
+        }
+    }
+}
+
+
+// ============================================
 // CALENDAR VIEW
 // ============================================
 
 class CalendarView extends obsidian.ItemView {
-    constructor(leaf) {
+    constructor(leaf, plugin) {
         super(leaf);
+        this.plugin = plugin;
         this.parser = getPlannerParser(this.app);
         this.activeModal = null;
         
@@ -4148,9 +4709,14 @@ class CalendarView extends obsidian.ItemView {
 
         menu.addItem((item) =>
             item
-                .setTitle("View/Edit Day")
+                .setTitle("Open Day View")
                 .setIcon("calendar")
                 .onClick(() => this.openPlannerDay(date, false))
+        );
+
+        menu.addItem((item) =>
+            item.setTitle("Quick edit (popup)").setIcon("square-pen")
+                .onClick(() => this.openQuickDayModal(date))
         );
 
         menu.addItem((item) =>
@@ -4242,12 +4808,11 @@ class CalendarView extends obsidian.ItemView {
     }
 
     async openPlannerDay(date, inNewSplit) {
-        // Close any existing modal first
-        if (this.activeModal) {
-            this.activeModal.close();
-            this.activeModal = null;
-        }
-        
+        return this.plugin.openDayView(date);
+    }
+
+    openQuickDayModal(date) {
+        if (this.activeModal) this.activeModal.close();
         const modal = new PlannerDayModal(
             this.app, 
             date, 
@@ -4297,6 +4862,7 @@ class CalendarPlugin extends obsidian.Plugin {
         this.app.workspace
             .getLeavesOfType(VIEW_TYPE_CALENDAR)
             .forEach((leaf) => leaf.detach());
+        this.app.workspace.getLeavesOfType(VIEW_TYPE_PLANNER_DAY).forEach(leaf => leaf.detach());
     }
 
     async onload() {
@@ -4304,7 +4870,14 @@ class CalendarPlugin extends obsidian.Plugin {
             this.options = value;
         }));
 
-        this.registerView(VIEW_TYPE_CALENDAR, (leaf) => (this.view = new CalendarView(leaf)));
+        this.registerView(VIEW_TYPE_CALENDAR, (leaf) => (this.view = new CalendarView(leaf, this)));
+        this.registerView(VIEW_TYPE_PLANNER_DAY, (leaf) => new PlannerDayView(leaf, this));
+        this.addRibbonIcon("calendar-clock", "Open day planner", () => this.openDayView());
+        this.addCommand({ id: "show-day-planner", name: "Open Day View", callback: () => this.openDayView() });
+        this.addCommand({ id: "show-today-planner", name: "Open today's Day View", callback: () => this.openDayView(window.moment()) });
+        this.addCommand({ id: "add-timed-planner-task", name: "Add timed planner task", callback: () => {
+            const modal = new PlannerTaskEditorModal(this, window.moment()); modal.open();
+        } });
 
         this.addCommand({
             id: "show-calendar-view",
@@ -4348,12 +4921,46 @@ class CalendarPlugin extends obsidian.Plugin {
         });
 
         await this.loadOptions();
+        const parser = getPlannerParser(this.app);
+        parser.setPlannerPath(this.options.plannerPath || DEFAULT_PLANNER_PATH);
+        await parser.parsePlanner();
         this.addSettingTab(new CalendarSettingsTab(this.app, this));
 
         if (this.app.workspace.layoutReady) {
             this.initLeaf();
         } else {
             this.registerEvent(this.app.workspace.on("layout-ready", this.initLeaf.bind(this)));
+        }
+    }
+
+    async openDayView(date = null) {
+        const target = window.moment(date || this.selectedPlannerDate || undefined);
+        this.selectedPlannerDate = target.format("YYYY-MM-DD");
+        let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_PLANNER_DAY)[0];
+        if (!leaf) {
+            leaf = this.app.workspace.getLeaf("tab");
+            await leaf.setViewState({ type: VIEW_TYPE_PLANNER_DAY, active: true });
+        }
+        if (leaf.view instanceof PlannerDayView) leaf.view.setDate(target);
+        await this.app.workspace.revealLeaf(leaf);
+    }
+
+    async openPlannerFile() {
+        const parser = getPlannerParser(this.app);
+        const file = this.app.vault.getAbstractFileByPath(parser.plannerPath);
+        if (file instanceof obsidian.TFile) {
+            await this.app.workspace.getLeaf("tab").openFile(file);
+        } else new obsidian.Notice(`Planner file not found: ${parser.plannerPath}`);
+    }
+
+    async refreshPlannerViews() {
+        const parser = getPlannerParser(this.app);
+        await parser.parsePlanner();
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PLANNER_DAY)) {
+            if (leaf.view instanceof PlannerDayView) leaf.view.render();
+        }
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CALENDAR)) {
+            if (leaf.view.calendar) leaf.view.calendar.tick();
         }
     }
 
@@ -4421,7 +5028,9 @@ class CalendarPlugin extends obsidian.Plugin {
 
     async writeOptions(changeOpts) {
         settings.update((old) => (Object.assign(Object.assign({}, old), changeOpts(old))));
+        getPlannerParser(this.app).setPlannerPath(this.options.plannerPath || DEFAULT_PLANNER_PATH);
         await this.saveData(this.options);
+        await this.refreshPlannerViews();
     }
 }
 
