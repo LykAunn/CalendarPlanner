@@ -1,5 +1,6 @@
 /* Calendar Planner — Day View additions. Designed for Obsidian light/dark themes. */
 .planner-day-root {
+  --planner-styles-version: v3-5;
   --planner-border: var(--background-modifier-border);
   --planner-hour-width: 64px;
   box-sizing: border-box;
@@ -288,8 +289,7 @@
   left: 4px; right: 4px; z-index: 2;
 }
 .planner-multi-column .planner-time-block {
-  min-width: 0; padding: 4px 5px; gap: 4px;
-  border-left-width: 2px;
+  min-width: 0; padding: 4px 5px; border-left-width: 2px;
 }
 .planner-span-7 .planner-time-block .planner-block-title { font-size: 11px; }
 .planner-span-7 .planner-time-block .planner-block-time { font-size: 9px; }
@@ -390,8 +390,10 @@
 @media (prefers-reduced-motion: reduce) {
   .planner-drag-selection { transition: none; }
 }
-/* v3.3 responsive timeline: the week fits its actual Obsidian pane width.
-   No fixed 1010/1080px minimum and no force-overrides. */
+
+/* v3.4 — Responsive planner layout, using actual column/card widths.
+   Do not set a minimum board width: the 7 days need to scale down with an
+   Obsidian pane, including split panes significantly smaller than the screen. */
 .planner-day-root.planner-in-multi,
 .planner-day-root .planner-multi-content,
 .planner-day-root .planner-multi-panel,
@@ -400,23 +402,17 @@
   min-width: 0;
   max-width: 100%;
 }
+.planner-day-root .planner-multi-content { grid-template-columns: minmax(0, 1fr); }
 .planner-day-root .planner-multi-scroll {
   width: 100%;
-  overflow-x: hidden;
-  /* Layout follows the pane, not the application window width. */
-  container-type: inline-size;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  container: planner-pane / inline-size;
 }
 .planner-day-root .planner-multi-board.planner-span-3,
-.planner-day-root .planner-multi-board.planner-span-7 {
-  width: 100%;
-  min-width: 0;
-}
-.planner-day-root .planner-multi-board.planner-span-7 {
-  --planner-hour-width: clamp(32px, 6cqw, 50px);
-}
-.planner-day-root .planner-multi-board.planner-span-3 {
-  --planner-hour-width: clamp(38px, 7cqw, 60px);
-}
+.planner-day-root .planner-multi-board.planner-span-7 { width: 100%; min-width: 0; }
+.planner-day-root .planner-multi-board.planner-span-3 { --planner-hour-width: clamp(35px, 7cqw, 57px); }
+.planner-day-root .planner-multi-board.planner-span-7 { --planner-hour-width: clamp(28px, 5cqw, 52px); }
 .planner-day-root .planner-multi-header,
 .planner-day-root .planner-multi-grid {
   min-width: 0;
@@ -424,111 +420,144 @@
 }
 .planner-day-root .planner-multi-column,
 .planner-day-root .planner-multi-day-header,
-.planner-day-root .planner-multi-day-heading {
-  min-width: 0;
-}
-.planner-day-root .planner-multi-day-header { padding-inline: clamp(2px, .6cqw, 7px); }
+.planner-day-root .planner-multi-day-heading,
+.planner-day-root .planner-multi-all-day { min-width: 0; }
+.planner-day-root .planner-multi-day-header { padding-inline: clamp(1px, .5cqw, 6px); overflow: hidden; }
 .planner-day-root .planner-multi-day-heading { gap: 1px; }
 .planner-day-root .planner-multi-day-heading button.planner-multi-day-name {
   min-width: 0;
+  padding-inline: 1px;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
-  padding-inline: 2px;
+  white-space: nowrap;
 }
 .planner-day-root .planner-multi-day-heading button.planner-small-add {
-  min-width: 21px;
-  width: 21px;
-  min-height: 23px;
-  height: 23px;
-  flex: 0 0 21px;
-  padding: 2px;
+  flex: 0 0 18px;
+  min-width: 18px;
+  width: 18px;
+  height: 24px;
+  padding: 1px;
 }
 
-/* Keep each timed card readable. Time has a full-width header row, followed
-   by an independent checkbox column and a title column. The matching JS
-   exposes .planner-block-time as a sibling of the edit button in multi view. */
+/* Each timed task is its own query container. Responsiveness must be based
+   on the *card* width, since overlapping tasks can be half a day column. */
 .planner-day-root .planner-multi-column .planner-time-block {
+  container: planner-card / inline-size;
   display: grid;
   grid-template-columns: 13px minmax(0, 1fr);
-  grid-template-rows: min-content minmax(0, 1fr);
+  grid-template-rows: min-content min-content;
   align-content: start;
-  column-gap: 4px;
-  row-gap: 2px;
+  gap: 3px 4px;
   padding: 4px 5px;
   min-width: 0;
+  border-left-width: 2px;
 }
 .planner-day-root .planner-multi-column .planner-time-block > .planner-block-time {
   grid-column: 1 / -1;
   grid-row: 1;
   display: block;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
-  padding-right: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 10px;
+  font-weight: 550;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  line-height: 1.2;
 }
-.planner-day-root .planner-multi-column .planner-time-block > .planner-block-checkbox {
+.planner-day-root .planner-multi-column .planner-time-block > input.planner-block-checkbox {
   grid-column: 1;
   grid-row: 2;
-  min-width: 0;
+  align-self: start;
+  margin: 1px 0 0;
+  min-width: 13px;
   width: 13px;
   height: 13px;
-  margin: 1px 0 0;
-  align-self: start;
 }
 .planner-day-root .planner-multi-column .planner-time-block > button.planner-block-main {
   grid-column: 2;
   grid-row: 2;
-  width: 100%;
+  align-self: start;
   min-width: 0;
   min-height: 0;
+  width: 100%;
   padding: 0;
   overflow: hidden;
-  align-self: start;
 }
 .planner-day-root .planner-multi-column .planner-block-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
   font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
+  line-height: 1.25;
+  width: 100%;
   text-align: left;
 }
-.planner-day-root .planner-multi-column .planner-time-block .planner-block-repeating {
+.planner-day-root .planner-multi-column .planner-block-repeating {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  font-size: 11px;
+  right: 3px;
+  top: 3px;
   line-height: 1;
+  font-size: 10px;
+  pointer-events: none;
 }
-.planner-day-root .planner-multi-column .planner-time-block.is-recurring > .planner-block-time {
-  padding-right: 11px;
-}
-.planner-day-root .planner-span-7 .planner-time-block .planner-block-time { font-size: 9px; }
-.planner-day-root .planner-span-7 .planner-time-block .planner-block-title { font-size: 10px; }
+.planner-day-root .planner-multi-column .is-recurring > .planner-block-time { padding-right: 11px; }
 
-/* The all-day list is also fluid. A checkbox never shares the text cell. */
-.planner-day-root .planner-compact-list { min-width: 0; }
+/* A medium-width card can use one line for the title, giving time priority. */
+@container planner-card (max-width: 112px) {
+  .planner-day-root .planner-multi-column button.planner-block-main .planner-block-title {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
+}
+/* Ultra-narrow overlapping cards: time and checkbox retain their own lines;
+   don't display one-letter-wide vertical title fragments. Full details are
+   available from the existing native tooltip and the task editor on click. */
+@container planner-card (max-width: 62px) {
+  .planner-day-root .planner-multi-column button.planner-block-main .planner-block-title { white-space: nowrap; }
+  .planner-day-root .planner-multi-column .planner-time-block > .planner-block-time {
+    font-size: 8px;
+    letter-spacing: -0.15px;
+  }
+  .planner-day-root .planner-multi-column .planner-time-block > input.planner-block-checkbox {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 11px;
+    height: 11px;
+    min-width: 11px;
+  }
+  .planner-day-root .planner-multi-column .planner-time-block > button.planner-block-main {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}
+
+/* All-day rows: the title never occupies the checkbox column. Keep title
+   readable and allow users to click/hover to see full text. */
+.planner-day-root .planner-multi-all-day { overflow-x: hidden; }
+.planner-day-root .planner-compact-list { min-width: 0; padding: 0; }
 .planner-day-root .planner-compact-list .planner-side-task {
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr);
   grid-auto-rows: min-content;
   align-items: start;
   column-gap: 5px;
-  row-gap: 3px;
+  row-gap: 2px;
   min-width: 0;
   padding: 4px 2px;
 }
-.planner-day-root .planner-compact-list .planner-side-task input[type="checkbox"] {
+.planner-day-root .planner-compact-list .planner-side-task > input[type="checkbox"] {
   grid-column: 1;
   grid-row: 1;
+  align-self: start;
   width: 13px;
   height: 13px;
   min-width: 13px;
@@ -540,86 +569,116 @@
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  overflow: hidden;
   min-width: 0;
   width: 100%;
   min-height: 0;
   padding: 0;
   margin: 0;
   white-space: normal;
-  overflow-wrap: anywhere;
-  font-size: 11px;
+  overflow-wrap: break-word;
+  word-break: normal;
+  overflow: hidden;
   line-height: 1.25;
+  font-size: 11px;
 }
-.planner-day-root .planner-compact-list .planner-repeat-pill,
-.planner-day-root .planner-compact-list .planner-range-pill {
+.planner-day-root .planner-compact-list .planner-side-task .planner-repeat-pill,
+.planner-day-root .planner-compact-list .planner-side-task .planner-range-pill {
   grid-column: 2;
   grid-row: auto;
   justify-self: start;
 }
-.planner-day-root .planner-multi-all-day {
+
+/* The width query belongs to the scroll pane, not the Obsidian window. */
+@container planner-pane (max-width: 720px) {
+  .planner-span-7 .planner-multi-day-heading button.planner-multi-day-name { font-size: 10px; }
+  .planner-span-7 .planner-multi-column .planner-time-block { gap: 2px 2px; padding: 3px; }
+  .planner-span-7 .planner-multi-column .planner-block-title { font-size: 10px; }
+}
+@container planner-pane (max-width: 510px) {
+  .planner-span-7 .planner-multi-day-heading button.planner-small-add { flex-basis: 15px; min-width: 15px; width: 15px; }
+  .planner-span-7 .planner-multi-column .planner-time-block { grid-template-columns: 11px minmax(0, 1fr); padding: 2px; }
+  .planner-span-7 .planner-compact-list .planner-side-task { grid-template-columns: 11px minmax(0, 1fr); column-gap: 2px; }
+  .planner-span-7 .planner-compact-list .planner-side-task > input[type="checkbox"] { width: 11px; height: 11px; min-width: 11px; }
+}
+
+/* An early long event may occupy the column width until a shorter event
+   overlays it later. Keep the short event clickable even while the base is
+   hovered, and reveal the complete task by opening the task editor. */
+.planner-day-root .planner-multi-column .planner-time-block.planner-overlap-base,
+.planner-day-root .planner-multi-column .planner-time-block.planner-overlap-base:hover { z-index: 2; }
+.planner-day-root .planner-multi-column .planner-time-block.planner-overlap-overlay { z-index: 3; }
+.planner-day-root .planner-multi-column .planner-time-block.planner-overlap-overlay:hover { z-index: 4; }
+
+/* v3.5: enforce shrink-to-pane throughout the flex/grid ancestry. */
+.planner-day-root.planner-in-multi {
+  width: 100%;
   min-width: 0;
-  overflow-x: hidden;
+  max-width: 100%;
+  overflow-x: clip;
+}
+.planner-day-root.planner-in-multi .planner-day-content,
+.planner-day-root.planner-in-multi .planner-day-timeline-panel,
+.planner-day-root.planner-in-multi .planner-multi-scroll,
+.planner-day-root.planner-in-multi .planner-multi-board {
+  min-width: 0;
+  max-width: 100%;
+}
+.planner-day-root.planner-in-multi .planner-multi-board {
+  width: 100%;
+  box-sizing: border-box;
+}
+/* Time is now one text node; never wrap a timestamp into stacked digits. */
+.planner-day-root .planner-multi-column .planner-time-block > .planner-block-time {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: ellipsis;
+  display: block;
 }
 
-/* Compact card chrome as the PANE (rather than the screen) gets narrower. */
-@container (max-width: 720px) {
-  .planner-day-root .planner-span-7 .planner-multi-day-header {
-    padding-inline: 2px;
-  }
-  .planner-day-root .planner-span-7 .planner-multi-day-heading button.planner-multi-day-name {
-    font-size: 10px;
-  }
-  .planner-day-root .planner-span-7 .planner-multi-column .planner-time-block {
-    padding: 3px;
-    column-gap: 3px;
-  }
-  .planner-day-root .planner-span-7 .planner-multi-column .planner-block-title {
-    font-size: 10px;
-  }
+/* v3.6: Monthly calendar in Obsidian's sidebar.
+   The original Svelte month table used auto column sizing. Long, single-line
+   task previews increased the table's intrinsic width and prevented the
+   sidebar from shrinking after it had grown. Fixed table layout distributes
+   available pane width across seven dates; previews ellipsize inside cells. */
+#calendar-container.container.svelte-pcimu8 {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
-@container (max-width: 510px) {
-  .planner-day-root .planner-span-7 .planner-multi-day-heading button.planner-small-add {
-    min-width: 16px;
-    width: 16px;
-    flex-basis: 16px;
-    padding: 0;
-  }
-  .planner-day-root .planner-span-7 .planner-multi-column .planner-time-block {
-    grid-template-columns: 11px minmax(0, 1fr);
-    padding-inline: 2px;
-    column-gap: 2px;
-  }
-  .planner-day-root .planner-span-7 .planner-multi-column .planner-block-checkbox {
-    width: 11px;
-    height: 11px;
-  }
-  .planner-day-root .planner-span-7 .planner-compact-list .planner-side-task {
-    grid-template-columns: 11px minmax(0, 1fr);
-    column-gap: 2px;
-  }
-  .planner-day-root .planner-span-7 .planner-compact-list .planner-side-task input[type="checkbox"] {
-    min-width: 11px;
-    width: 11px;
-    height: 11px;
-  }
+#calendar-container table.calendar.svelte-pcimu8 {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
 }
-
-/* Compact time labels and single-line ellipsis replace broken, vertical words
-   when the seven-column view is squeezed into a narrow pane. */
-.planner-day-root .planner-block-time-compact { display: none; }
-@container (max-width: 720px) {
-  .planner-day-root .planner-span-7 .planner-block-time-full { display: none; }
-  .planner-day-root .planner-span-7 .planner-block-time-compact { display: inline; }
-  .planner-day-root .planner-span-7 .planner-time-block > .planner-block-time {
-    font-size: 9px;
-    line-height: 1.15;
-  }
-  .planner-day-root .planner-span-7 .planner-time-block .planner-block-title {
-    display: block;
-    width: 100%;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
+#calendar-container table.calendar.svelte-pcimu8 th,
+#calendar-container table.calendar.svelte-pcimu8 td {
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+#calendar-container .day.svelte-q3wqg9,
+#calendar-container .entries-container.svelte-q3wqg9 {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+#calendar-container .entry.svelte-q3wqg9 {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#calendar-container .nav.svelte-1vwr9dd {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+#calendar-container .nav.svelte-1vwr9dd .title.svelte-1vwr9dd {
+  min-width: 0;
 }

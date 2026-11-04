@@ -2361,7 +2361,7 @@ class MetadataResolver extends SvelteComponent {
 function add_css$4() {
     var style = element("style");
     style.id = "svelte-q3wqg9-style";
-    style.textContent = ".day.svelte-q3wqg9{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;min-height:70px;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:top}.day.svelte-q3wqg9:hover{background-color:var(--interactive-hover)}.day.active.svelte-q3wqg9:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-q3wqg9{opacity:0.25}.today.svelte-q3wqg9{color:var(--color-text-today)}.day.svelte-q3wqg9:active,.active.svelte-q3wqg9,.active.today.svelte-q3wqg9{color:var(--text-on-accent);background-color:var(--interactive-accent)}.day-number.svelte-q3wqg9{font-weight:600;margin-bottom:2px}.entries-container.svelte-q3wqg9{display:flex;flex-direction:column;gap:1px;font-size:0.7em;text-align:left;line-height:1.2}.entry.svelte-q3wqg9{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px;border-radius:2px;background:var(--background-modifier-hover)}.entry.completed.svelte-q3wqg9{text-decoration:line-through;opacity:0.6}.entry.overflow.svelte-q3wqg9{font-style:italic;color:var(--text-muted);background:none}.entry.range.svelte-q3wqg9{background:var(--interactive-accent);color:var(--text-on-accent);opacity:0.85}.entry.range-start.svelte-q3wqg9{border-radius:2px 0 0 2px;margin-right:-2px}.entry.range-middle.svelte-q3wqg9{border-radius:0;margin-left:-2px;margin-right:-2px}.entry.range-end.svelte-q3wqg9{border-radius:0 2px 2px 0;margin-left:-2px}.active .entry.svelte-q3wqg9{background:rgba(255,255,255,0.2)}.active .entry.range.svelte-q3wqg9{background:rgba(255,255,255,0.4)}.dot-container.svelte-q3wqg9{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
+    style.textContent = ".day.svelte-q3wqg9{background-color:var(--color-background-day);border-radius:4px;color:var(--color-text-day);cursor:pointer;font-size:0.8em;height:100%;min-height:70px;padding:4px;position:relative;text-align:center;transition:background-color 0.1s ease-in, color 0.1s ease-in;vertical-align:top}.day.svelte-q3wqg9:hover{background-color:var(--interactive-hover)}.day.active.svelte-q3wqg9:hover{background-color:var(--interactive-accent-hover)}.adjacent-month.svelte-q3wqg9{opacity:0.25}.today.svelte-q3wqg9{color:var(--color-text-today)}.day.svelte-q3wqg9:active,.active.svelte-q3wqg9,.active.today.svelte-q3wqg9{color:var(--text-on-accent);background-color:var(--interactive-accent)}.day-number.svelte-q3wqg9{font-weight:600;margin-bottom:2px}.entries-container.svelte-q3wqg9{display:flex;flex-direction:column;gap:1px;font-size:0.7em;text-align:left;line-height:1.2;min-width:0;max-width:100%;overflow:hidden}.entry.svelte-q3wqg9{display:block;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px;border-radius:2px;background:var(--background-modifier-hover)}.entry.completed.svelte-q3wqg9{text-decoration:line-through;opacity:0.6}.entry.overflow.svelte-q3wqg9{font-style:italic;color:var(--text-muted);background:none}.entry.range.svelte-q3wqg9{background:var(--interactive-accent);color:var(--text-on-accent);opacity:0.85}.entry.range-start.svelte-q3wqg9{border-radius:2px 0 0 2px;margin-right:-2px}.entry.range-middle.svelte-q3wqg9{border-radius:0;margin-left:-2px;margin-right:-2px}.entry.range-end.svelte-q3wqg9{border-radius:0 2px 2px 0;margin-left:-2px}.active .entry.svelte-q3wqg9{background:rgba(255,255,255,0.2)}.active .entry.range.svelte-q3wqg9{background:rgba(255,255,255,0.4)}.dot-container.svelte-q3wqg9{display:flex;flex-wrap:wrap;justify-content:center;line-height:6px;min-height:6px}";
     append(document.head, style);
 }
 
@@ -2382,6 +2382,7 @@ function create_each_block$2(ctx) {
             div = element("div");
             t = text(t_value);
             attr(div, "class", "entry svelte-q3wqg9");
+            attr(div, "title", ctx[11].text);
             toggle_class(div, "completed", ctx[11].completed);
             toggle_class(div, "overflow", ctx[11].isOverflow);
             toggle_class(div, "range", ctx[11].isRangeEntry);
@@ -2395,6 +2396,7 @@ function create_each_block$2(ctx) {
         },
         p(ctx, dirty) {
             if (dirty & 128 && t_value !== (t_value = ctx[11].text + "")) set_data(t, t_value);
+            if (dirty & 128) attr(div, "title", ctx[11].text);
             if (dirty & 128) {
                 toggle_class(div, "completed", ctx[11].completed);
                 toggle_class(div, "overflow", ctx[11].isOverflow);
@@ -3225,7 +3227,7 @@ class WeekNum extends SvelteComponent {
 function add_css() {
     var style = element("style");
     style.id = "svelte-pcimu8-style";
-    style.textContent = ".container.svelte-pcimu8{--color-background-heading:transparent;--color-background-day:transparent;--color-background-weeknum:transparent;--color-background-weekend:transparent;--color-dot:var(--text-muted);--color-arrow:var(--text-muted);--color-button:var(--text-muted);--color-text-title:var(--text-normal);--color-text-heading:var(--text-muted);--color-text-day:var(--text-normal);--color-text-today:var(--interactive-accent);--color-text-weeknum:var(--text-muted)}.container.svelte-pcimu8{padding:0 8px}.container.is-mobile.svelte-pcimu8{padding:0}th.svelte-pcimu8{text-align:center}.weekend.svelte-pcimu8{background-color:var(--color-background-weekend)}.calendar.svelte-pcimu8{border-collapse:collapse;width:100%}th.svelte-pcimu8{background-color:var(--color-background-heading);color:var(--color-text-heading);font-size:0.6em;letter-spacing:1px;padding:4px;text-transform:uppercase}";
+    style.textContent = ".container.svelte-pcimu8{--color-background-heading:transparent;--color-background-day:transparent;--color-background-weeknum:transparent;--color-background-weekend:transparent;--color-dot:var(--text-muted);--color-arrow:var(--text-muted);--color-button:var(--text-muted);--color-text-title:var(--text-normal);--color-text-heading:var(--text-muted);--color-text-day:var(--text-normal);--color-text-today:var(--interactive-accent);--color-text-weeknum:var(--text-muted)}.container.svelte-pcimu8{padding:0 8px;box-sizing:border-box;width:100%;max-width:100%;min-width:0}.container.is-mobile.svelte-pcimu8{padding:0}th.svelte-pcimu8{text-align:center}.weekend.svelte-pcimu8{background-color:var(--color-background-weekend)}.calendar.svelte-pcimu8{border-collapse:collapse;width:100%;max-width:100%;table-layout:fixed}th.svelte-pcimu8{background-color:var(--color-background-heading);color:var(--color-text-heading);font-size:0.6em;letter-spacing:1px;padding:4px;text-transform:uppercase}";
     append(document.head, style);
 }
 
@@ -3563,6 +3565,7 @@ function create_fragment$7(ctx) {
             for (let i = 0; i < each_blocks.length; i += 1) { each_blocks[i].c(); }
             attr(table, "class", "calendar svelte-pcimu8");
             attr(div, "id", "calendar-container");
+            attr(div, "data-calendar-layout", "sidebar-responsive-v3.6");
             attr(div, "class", "container svelte-pcimu8");
             toggle_class(div, "is-mobile", ctx[16]);
         },
@@ -4033,6 +4036,12 @@ function plannerTaskTime(task) {
 }
 // Shorter labels are used only when Week view becomes too narrow to show HH:MM
 // twice on one line. The full start/end times remain in the task tooltip.
+// This is intentionally text replacement, not a CSS switch between two nodes.
+function plannerSetTaskTimeLabel(node, blockWidth) {
+    const compact = blockWidth > 0 && blockWidth < 130;
+    const value = compact ? node.dataset.shortTime : node.dataset.fullTime;
+    if (value && node.textContent !== value) node.textContent = value;
+}
 function plannerShortTaskTime(task) {
     const compact = value => {
         const time = plannerMinutesToTime(value);
@@ -4214,6 +4223,8 @@ class PlannerDayView extends obsidian.ItemView {
         this.scrollInitialised = false;
         this.minuteTimer = null;
         this.nowLines = [];
+        this.taskTimeObserver = null;
+        this.warnedStaleStyles = false;
         this.activeSelection = null;
         this.registerEvent(this.app.vault.on("modify", file => this.onPlannerFileChange(file)));
         this.registerEvent(this.app.vault.on("create", file => this.onPlannerFileChange(file)));
@@ -4229,6 +4240,8 @@ class PlannerDayView extends obsidian.ItemView {
     }
     async onClose() {
         this.cancelTimeSelection();
+        if (this.taskTimeObserver) this.taskTimeObserver.disconnect();
+        this.taskTimeObserver = null;
         if (this.minuteTimer) window.clearInterval(this.minuteTimer);
         this.minuteTimer = null;
         this.nowLines = [];
@@ -4423,24 +4436,39 @@ class PlannerDayView extends obsidian.ItemView {
     }
     addTimeBlocks(parent, tasks, date, isMulti = false) {
         const layer = plannerEl(parent, "div", `planner-blocks-layer${isMulti ? " planner-blocks-multi" : ""}`);
-        const scheduled = tasks.filter(t => t.startMinutes !== null && (!this.hideCompleted || !t.completed));
+        const scheduled = tasks.filter(t => t.startMinutes !== null && (!this.hideCompleted || !t.completed))
+            .sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
         const positions = plannerPartitionOverlaps(scheduled);
         for (const task of scheduled) {
             const position = positions.get(task);
             const clampedStart = Math.max(this.startHour * 60, task.startMinutes);
             const clampedEnd = Math.min(this.endHour * 60, task.endMinutes);
-            const block = plannerEl(layer, "div", `planner-time-block${task.completed ? " is-done" : ""}${task.recurrence !== "none" ? " is-recurring" : ""}`);
+            // In Week view, an early long task should not remain half-width
+            // simply because a later short task overlaps for a brief period.
+            // Draw its full-width base first; later tasks occupy their normal
+            // lanes above it. Keep equal-start overlaps side by side.
+            const hasOtherAtStart = scheduled.some(other => other !== task &&
+                other.startMinutes <= task.startMinutes && other.endMinutes > task.startMinutes);
+            const wideBase = isMulti && this.spanDays === 7 && position.laneCount > 1 &&
+                position.lane === 0 && !hasOtherAtStart;
+            const overlapOverlay = isMulti && this.spanDays === 7 && position.laneCount > 1 && !wideBase;
+            const block = plannerEl(layer, "div", `planner-time-block${task.completed ? " is-done" : ""}${task.recurrence !== "none" ? " is-recurring" : ""}${wideBase ? " planner-overlap-base" : ""}${overlapOverlay ? " planner-overlap-overlay" : ""}`);
             block.style.top = `${(clampedStart / 60 - this.startHour) * this.hourHeight + 2}px`;
             block.style.height = `${Math.max(18, (clampedEnd - clampedStart) / 60 * this.hourHeight - 3)}px`;
-            block.style.left = `${position.lane / position.laneCount * 100}%`;
-            block.style.width = `${100 / position.laneCount}%`;
+            block.style.left = `${wideBase ? 0 : position.lane / position.laneCount * 100}%`;
+            block.style.width = `${wideBase ? 100 : 100 / position.laneCount}%`;
             block.title = `${date.format("ddd D MMM")}: ${plannerTaskTime(task)} ${task.text}${task.recurrence !== "none" ? ` (repeats ${task.recurrence})` : ""}`;
             // Multi-day columns need a full-width time row. Keeping it outside
             // the edit button prevents narrow columns from hiding the times.
             if (isMulti) {
-                const time = plannerEl(block, "span", "planner-block-time");
-                plannerEl(time, "span", "planner-block-time-full", plannerTaskTime(task));
-                plannerEl(time, "span", "planner-block-time-compact", plannerShortTaskTime(task));
+                // Exactly one time node. JS chooses the readable format for the
+                // actual card width; obsolete stylesheets cannot reveal a second label.
+                const time = plannerEl(block, "span", "planner-block-time", plannerTaskTime(task));
+                time.dataset.fullTime = plannerTaskTime(task);
+                time.dataset.shortTime = plannerShortTaskTime(task);
+                plannerSetTaskTimeLabel(time, block.getBoundingClientRect().width);
+                if (this.taskTimeObserver) this.taskTimeObserver.observe(block);
+                else if (isMulti && this.spanDays === 7) time.textContent = time.dataset.shortTime;
             }
             const check = plannerEl(block, "input", "planner-block-checkbox");
             check.type = "checkbox"; check.checked = !!task.completed;
@@ -4556,10 +4584,26 @@ class PlannerDayView extends obsidian.ItemView {
         const root = this.contentEl;
         if (!root) return;
         this.cancelTimeSelection();
+        if (this.taskTimeObserver) this.taskTimeObserver.disconnect();
+        this.taskTimeObserver = null;
         const prevScroll = root.querySelector(".planner-day-scroll")?.scrollTop;
         const prevHorizontal = root.querySelector(".planner-day-scroll")?.scrollLeft;
         root.empty();
         root.addClass("planner-day-root");
+        root.setAttribute("data-planner-layout", "v3.5");
+        if (!this.warnedStaleStyles && window.getComputedStyle(root).getPropertyValue("--planner-styles-version").trim() !== "v3-5") {
+            this.warnedStaleStyles = true;
+            console.warn("[Calendar Planner] main.js is v3.5 but styles.css is not. Update both files and reload Obsidian.");
+            new obsidian.Notice("Calendar Planner: mismatched plugin styles. Update styles.css alongside main.js and reload Obsidian.", 8000);
+        }
+        if (typeof window.ResizeObserver === "function") {
+            this.taskTimeObserver = new window.ResizeObserver(entries => {
+                for (const entry of entries) {
+                    const time = entry.target.querySelector(":scope > .planner-block-time");
+                    if (time) plannerSetTaskTimeLabel(time, entry.target.getBoundingClientRect().width);
+                }
+            });
+        }
         root.toggleClass("planner-in-multi", this.spanDays > 1);
         const days = this.getVisibleDates();
         const allTasks = days.flatMap(date => this.getTasks(date).tasks);
