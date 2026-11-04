@@ -92,9 +92,9 @@
 .planner-time-block:hover { filter: brightness(1.04); z-index: 3; }
 .planner-time-block.is-done { opacity: .58; }
 .planner-block-checkbox { flex: 0 0 15px; width: 15px; height: 15px; margin: 1px 0 0; cursor: pointer; }
-.planner-block-main {
+.planner-day-root .planner-time-block button.planner-block-main {
   display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start;
-  background: transparent !important; border: 0 !important; box-shadow: none !important;
+  background: transparent; border: 0; box-shadow: none;
   padding: 0; margin: 0; text-align: left; color: var(--text-normal); cursor: pointer;
   white-space: normal; overflow: hidden;
 }
@@ -120,12 +120,12 @@
 }
 .planner-side-task:last-child { border-bottom: 0; }
 .planner-side-task input[type="checkbox"] { margin: 2px 0 0; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
-.planner-side-task-title {
+.planner-day-root .planner-side-task button.planner-side-task-title {
   padding: 0; margin: 0; flex: 1 1 auto; min-width: 0; font: inherit; font-size: 13px;
-  text-align: left; background: none !important; color: var(--text-normal);
-  border: 0 !important; box-shadow: none !important; cursor: pointer; overflow-wrap: anywhere;
+  text-align: left; background: none; color: var(--text-normal);
+  border: 0; box-shadow: none; cursor: pointer; overflow-wrap: anywhere;
 }
-.planner-side-task-title:hover { color: var(--text-accent); }
+.planner-day-root .planner-side-task button.planner-side-task-title:hover { color: var(--text-accent); }
 .planner-repeat-pill, .planner-range-pill {
   flex-shrink: 0; color: var(--text-accent); background: var(--background-modifier-hover);
   border-radius: 4px; padding: 2px 5px; font-size: 10px;
@@ -200,8 +200,8 @@
   width: 100%;
   background: var(--background-primary);
 }
-.planner-multi-board.planner-span-3 { min-width: 675px; }
-.planner-multi-board.planner-span-7 { min-width: 1080px; }
+.planner-multi-board.planner-span-3 { min-width: 0; }
+.planner-multi-board.planner-span-7 { min-width: 0; }
 .planner-multi-header, .planner-multi-grid {
   display: grid;
   grid-template-columns: var(--planner-hour-width) repeat(var(--planner-days), minmax(0, 1fr));
@@ -230,14 +230,14 @@
   background: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-secondary));
 }
 .planner-multi-day-heading { display: flex; align-items: center; gap: 3px; justify-content: space-between; }
-.planner-multi-day-name {
+.planner-day-root .planner-multi-day-heading button.planner-multi-day-name {
   flex: 1 1 auto; min-width: 0; padding: 3px 4px;
   font-weight: 670; font-size: 12px; text-align: left;
-  background: none !important; border: none !important; box-shadow: none !important;
+  background: none; border: none; box-shadow: none;
   color: var(--text-normal); cursor: pointer;
 }
-.planner-multi-day-name:hover { color: var(--text-accent); }
-.planner-multi-day-header.is-today .planner-multi-day-name { color: var(--text-accent); }
+.planner-day-root .planner-multi-day-heading button.planner-multi-day-name:hover { color: var(--text-accent); }
+.planner-day-root .planner-multi-day-header.is-today button.planner-multi-day-name { color: var(--text-accent); }
 .planner-small-add.planner-ui-btn {
   min-width: 26px; min-height: 26px; padding: 4px; background: transparent;
   border: 1px solid transparent;
@@ -251,7 +251,7 @@
 .planner-compact-list { padding: 0; }
 .planner-compact-list .planner-side-task { padding: 3px 2px; gap: 5px; }
 .planner-compact-list .planner-side-task input[type="checkbox"] { width: 13px; height: 13px; margin: 1px 0 0; }
-.planner-compact-list .planner-side-task-title { font-size: 11px; line-height: 1.3; }
+.planner-day-root .planner-compact-list .planner-side-task button.planner-side-task-title { font-size: 11px; line-height: 1.3; }
 .planner-compact-list .planner-repeat-pill,
 .planner-compact-list .planner-range-pill { font-size: 9px; padding: 1px 3px; }
 .planner-span-7 .planner-range-pill { display: none; }
@@ -309,8 +309,8 @@
   .planner-in-multi .planner-day-content { overflow: hidden; }
   .planner-in-multi .planner-multi-panel { height: 100%; }
   .planner-in-multi .planner-multi-scroll { overflow: auto; }
-  .planner-multi-board.planner-span-3 { min-width: 640px; }
-  .planner-multi-board.planner-span-7 { min-width: 1010px; }
+  .planner-multi-board.planner-span-3 { min-width: 0; }
+  .planner-multi-board.planner-span-7 { min-width: 0; }
   .planner-editor { max-height: 72vh; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -333,18 +333,18 @@
   padding: 0;
   margin: 0;
   appearance: none;
-  background: var(--planner-hour-cell-bg) !important;
-  border: 0 !important;
-  border-top: 1px solid var(--planner-hour-divider) !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
+  background: var(--planner-hour-cell-bg);
+  border: 0;
+  border-top: 1px solid var(--planner-hour-divider);
+  border-radius: 0;
+  box-shadow: none;
   opacity: 1;
 }
 .planner-day-root button.planner-hour-hit:hover {
-  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--planner-hour-cell-bg)) !important;
+  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--planner-hour-cell-bg));
 }
 .planner-day-root button.planner-hour-hit:focus-visible {
-  outline: 2px dashed var(--interactive-accent) !important;
+  outline: 2px dashed var(--interactive-accent);
   outline-offset: -3px;
 }
 /* The separate markers keep the time axis and final day-end line visible. */
@@ -354,10 +354,10 @@
 }
 /* Today’s column retains a slight theme-accent wash without losing lines. */
 .planner-day-root .planner-multi-column.is-today button.planner-hour-hit {
-  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--planner-hour-cell-bg)) !important;
+  background: color-mix(in srgb, var(--interactive-accent) 4%, var(--planner-hour-cell-bg));
 }
 .planner-day-root .planner-multi-column.is-today button.planner-hour-hit:hover {
-  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--planner-hour-cell-bg)) !important;
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--planner-hour-cell-bg));
 }
 
 /* v3: drag an empty timeline range to create a precisely timed task. */
@@ -371,7 +371,7 @@
   border-radius: 5px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
 }
-.planner-drag-selection[hidden] { display: none !important; }
+.planner-day-root .planner-drag-selection[hidden] { display: none; }
 .planner-drag-selection-multi { left: 0; right: 0; }
 .planner-drag-selection-label {
   position: sticky; top: 3px;
@@ -385,8 +385,241 @@
   white-space: nowrap;
   box-shadow: 0 1px 4px rgba(0,0,0,.2);
 }
-.planner-is-selecting, .planner-is-selecting * { user-select: none !important; }
+.planner-day-root.planner-is-selecting, .planner-day-root.planner-is-selecting * { user-select: none; }
 .planner-is-selecting .planner-hour-hit { cursor: ns-resize; }
 @media (prefers-reduced-motion: reduce) {
   .planner-drag-selection { transition: none; }
+}
+/* v3.3 responsive timeline: the week fits its actual Obsidian pane width.
+   No fixed 1010/1080px minimum and no force-overrides. */
+.planner-day-root.planner-in-multi,
+.planner-day-root .planner-multi-content,
+.planner-day-root .planner-multi-panel,
+.planner-day-root .planner-multi-scroll,
+.planner-day-root .planner-multi-board {
+  min-width: 0;
+  max-width: 100%;
+}
+.planner-day-root .planner-multi-scroll {
+  width: 100%;
+  overflow-x: hidden;
+  /* Layout follows the pane, not the application window width. */
+  container-type: inline-size;
+}
+.planner-day-root .planner-multi-board.planner-span-3,
+.planner-day-root .planner-multi-board.planner-span-7 {
+  width: 100%;
+  min-width: 0;
+}
+.planner-day-root .planner-multi-board.planner-span-7 {
+  --planner-hour-width: clamp(32px, 6cqw, 50px);
+}
+.planner-day-root .planner-multi-board.planner-span-3 {
+  --planner-hour-width: clamp(38px, 7cqw, 60px);
+}
+.planner-day-root .planner-multi-header,
+.planner-day-root .planner-multi-grid {
+  min-width: 0;
+  grid-template-columns: var(--planner-hour-width) repeat(var(--planner-days), minmax(0, 1fr));
+}
+.planner-day-root .planner-multi-column,
+.planner-day-root .planner-multi-day-header,
+.planner-day-root .planner-multi-day-heading {
+  min-width: 0;
+}
+.planner-day-root .planner-multi-day-header { padding-inline: clamp(2px, .6cqw, 7px); }
+.planner-day-root .planner-multi-day-heading { gap: 1px; }
+.planner-day-root .planner-multi-day-heading button.planner-multi-day-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-inline: 2px;
+}
+.planner-day-root .planner-multi-day-heading button.planner-small-add {
+  min-width: 21px;
+  width: 21px;
+  min-height: 23px;
+  height: 23px;
+  flex: 0 0 21px;
+  padding: 2px;
+}
+
+/* Keep each timed card readable. Time has a full-width header row, followed
+   by an independent checkbox column and a title column. The matching JS
+   exposes .planner-block-time as a sibling of the edit button in multi view. */
+.planner-day-root .planner-multi-column .planner-time-block {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  grid-template-rows: min-content minmax(0, 1fr);
+  align-content: start;
+  column-gap: 4px;
+  row-gap: 2px;
+  padding: 4px 5px;
+  min-width: 0;
+}
+.planner-day-root .planner-multi-column .planner-time-block > .planner-block-time {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  padding-right: 0;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.planner-day-root .planner-multi-column .planner-time-block > .planner-block-checkbox {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  width: 13px;
+  height: 13px;
+  margin: 1px 0 0;
+  align-self: start;
+}
+.planner-day-root .planner-multi-column .planner-time-block > button.planner-block-main {
+  grid-column: 2;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  align-self: start;
+}
+.planner-day-root .planner-multi-column .planner-block-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.planner-day-root .planner-multi-column .planner-time-block .planner-block-repeating {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+.planner-day-root .planner-multi-column .planner-time-block.is-recurring > .planner-block-time {
+  padding-right: 11px;
+}
+.planner-day-root .planner-span-7 .planner-time-block .planner-block-time { font-size: 9px; }
+.planner-day-root .planner-span-7 .planner-time-block .planner-block-title { font-size: 10px; }
+
+/* The all-day list is also fluid. A checkbox never shares the text cell. */
+.planner-day-root .planner-compact-list { min-width: 0; }
+.planner-day-root .planner-compact-list .planner-side-task {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  grid-auto-rows: min-content;
+  align-items: start;
+  column-gap: 5px;
+  row-gap: 3px;
+  min-width: 0;
+  padding: 4px 2px;
+}
+.planner-day-root .planner-compact-list .planner-side-task input[type="checkbox"] {
+  grid-column: 1;
+  grid-row: 1;
+  width: 13px;
+  height: 13px;
+  min-width: 13px;
+  margin: 1px 0 0;
+}
+.planner-day-root .planner-compact-list .planner-side-task > button.planner-side-task-title {
+  grid-column: 2;
+  grid-row: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.planner-day-root .planner-compact-list .planner-repeat-pill,
+.planner-day-root .planner-compact-list .planner-range-pill {
+  grid-column: 2;
+  grid-row: auto;
+  justify-self: start;
+}
+.planner-day-root .planner-multi-all-day {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Compact card chrome as the PANE (rather than the screen) gets narrower. */
+@container (max-width: 720px) {
+  .planner-day-root .planner-span-7 .planner-multi-day-header {
+    padding-inline: 2px;
+  }
+  .planner-day-root .planner-span-7 .planner-multi-day-heading button.planner-multi-day-name {
+    font-size: 10px;
+  }
+  .planner-day-root .planner-span-7 .planner-multi-column .planner-time-block {
+    padding: 3px;
+    column-gap: 3px;
+  }
+  .planner-day-root .planner-span-7 .planner-multi-column .planner-block-title {
+    font-size: 10px;
+  }
+}
+@container (max-width: 510px) {
+  .planner-day-root .planner-span-7 .planner-multi-day-heading button.planner-small-add {
+    min-width: 16px;
+    width: 16px;
+    flex-basis: 16px;
+    padding: 0;
+  }
+  .planner-day-root .planner-span-7 .planner-multi-column .planner-time-block {
+    grid-template-columns: 11px minmax(0, 1fr);
+    padding-inline: 2px;
+    column-gap: 2px;
+  }
+  .planner-day-root .planner-span-7 .planner-multi-column .planner-block-checkbox {
+    width: 11px;
+    height: 11px;
+  }
+  .planner-day-root .planner-span-7 .planner-compact-list .planner-side-task {
+    grid-template-columns: 11px minmax(0, 1fr);
+    column-gap: 2px;
+  }
+  .planner-day-root .planner-span-7 .planner-compact-list .planner-side-task input[type="checkbox"] {
+    min-width: 11px;
+    width: 11px;
+    height: 11px;
+  }
+}
+
+/* Compact time labels and single-line ellipsis replace broken, vertical words
+   when the seven-column view is squeezed into a narrow pane. */
+.planner-day-root .planner-block-time-compact { display: none; }
+@container (max-width: 720px) {
+  .planner-day-root .planner-span-7 .planner-block-time-full { display: none; }
+  .planner-day-root .planner-span-7 .planner-block-time-compact { display: inline; }
+  .planner-day-root .planner-span-7 .planner-time-block > .planner-block-time {
+    font-size: 9px;
+    line-height: 1.15;
+  }
+  .planner-day-root .planner-span-7 .planner-time-block .planner-block-title {
+    display: block;
+    width: 100%;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
 }

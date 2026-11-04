@@ -4031,6 +4031,15 @@ function plannerWeekdayName(day) { return window.moment(day).format("ddd"); }
 function plannerTaskTime(task) {
     return task.startMinutes === null ? "" : `${plannerMinutesToTime(task.startMinutes)}–${plannerMinutesToTime(task.endMinutes)}`;
 }
+// Shorter labels are used only when Week view becomes too narrow to show HH:MM
+// twice on one line. The full start/end times remain in the task tooltip.
+function plannerShortTaskTime(task) {
+    const compact = value => {
+        const time = plannerMinutesToTime(value);
+        return time.endsWith(":00") ? time.slice(0, -3) : time;
+    };
+    return task.startMinutes === null ? "" : `${compact(task.startMinutes)}–${compact(task.endMinutes)}`;
+}
 
 // Drag selection uses 15-minute boundaries. Floor the earlier endpoint and ceil
 // the later endpoint, so dragging in either direction yields the same interval.
@@ -4426,6 +4435,13 @@ class PlannerDayView extends obsidian.ItemView {
             block.style.left = `${position.lane / position.laneCount * 100}%`;
             block.style.width = `${100 / position.laneCount}%`;
             block.title = `${date.format("ddd D MMM")}: ${plannerTaskTime(task)} ${task.text}${task.recurrence !== "none" ? ` (repeats ${task.recurrence})` : ""}`;
+            // Multi-day columns need a full-width time row. Keeping it outside
+            // the edit button prevents narrow columns from hiding the times.
+            if (isMulti) {
+                const time = plannerEl(block, "span", "planner-block-time");
+                plannerEl(time, "span", "planner-block-time-full", plannerTaskTime(task));
+                plannerEl(time, "span", "planner-block-time-compact", plannerShortTaskTime(task));
+            }
             const check = plannerEl(block, "input", "planner-block-checkbox");
             check.type = "checkbox"; check.checked = !!task.completed;
             check.setAttribute("aria-label", `Complete ${task.text} on ${date.format("D MMMM")}`);
@@ -4434,7 +4450,9 @@ class PlannerDayView extends obsidian.ItemView {
             const edit = plannerEl(block, "button", "planner-block-main");
             edit.type = "button";
             plannerEl(edit, "strong", "planner-block-title", task.text);
-            plannerEl(edit, "span", "planner-block-time", plannerTaskTime(task));
+            // Single-day cards retain the original title-then-time layout.
+            if (!isMulti) plannerEl(edit, "span", "planner-block-time", plannerTaskTime(task));
+            edit.setAttribute("aria-label", `${task.text}, ${plannerTaskTime(task)}`);
             edit.addEventListener("click", () => this.openEditor(task, {}, date));
             if (task.recurrence !== "none") plannerEl(block, "span", "planner-block-repeating", "↻");
         }
