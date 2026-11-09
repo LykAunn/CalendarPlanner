@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2021 Liam Cain (Original Obsidian Calendar Plugin)
+Copyright (c) 2021 Liam Cain
 Copyright (c) 2026 Rud0lf
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,23 +20,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-## Attribution
- 
-This project is a modified version of the [Obsidian Calendar Plugin](https://github.com/liamcain/obsidian-calendar-plugin) by [Liam Cain](https://github.com/liamcain).
- 
-### Original Project
- 
-- **Repository**: https://github.com/liamcain/obsidian-calendar-plugin
-- **Author**: Liam Cain
-- **License**: MIT
- 
-### Modifications
- 
-This version has been modified to:
- 
-- Read from a single master planner file instead of individual daily notes
-- Display entry text directly on calendar day cells
-- Add task completion toggling via checkboxes
-- Support multiple entry formats (numbered lists, bullets, checkboxes)
-- Navigate to specific date sections within the planner file
