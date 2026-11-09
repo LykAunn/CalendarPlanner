@@ -246,7 +246,6 @@
 .planner-small-add:hover { background: var(--background-modifier-hover); border-color: var(--planner-border); }
 .planner-multi-all-day {
   min-height: 28px; max-height: 128px; overflow-y: auto;
-  scrollbar-width: thin;
 }
 .planner-multi-no-tasks { display: block; padding: 4px; font-size: 10px; color: var(--text-faint); }
 .planner-compact-list { padding: 0; }
@@ -549,8 +548,7 @@
   grid-template-columns: 14px minmax(0, 1fr);
   grid-auto-rows: min-content;
   align-items: start;
-  column-gap: 5px;
-  row-gap: 2px;
+  gap: 2px 5px;
   min-width: 0;
   padding: 4px 2px;
 }
@@ -597,7 +595,7 @@
 @container planner-pane (max-width: 510px) {
   .planner-span-7 .planner-multi-day-heading button.planner-small-add { flex-basis: 15px; min-width: 15px; width: 15px; }
   .planner-span-7 .planner-multi-column .planner-time-block { grid-template-columns: 11px minmax(0, 1fr); padding: 2px; }
-  .planner-span-7 .planner-compact-list .planner-side-task { grid-template-columns: 11px minmax(0, 1fr); column-gap: 2px; }
+  .planner-span-7 .planner-compact-list .planner-side-task { grid-template-columns: 11px minmax(0, 1fr); gap: 2px 2px; }
   .planner-span-7 .planner-compact-list .planner-side-task > input[type="checkbox"] { width: 11px; height: 11px; min-width: 11px; }
 }
 
