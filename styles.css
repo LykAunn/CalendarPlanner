@@ -1,6 +1,6 @@
 /* Calendar Planner — Day View additions. Designed for Obsidian light/dark themes. */
 .planner-day-root {
-  --planner-styles-version: v3-7;
+  --planner-styles-version: v3-8;
   --planner-border: var(--background-modifier-border);
   --planner-hour-width: 64px;
   box-sizing: border-box;
@@ -736,4 +736,55 @@
     cursor: grab;
   }
   .planner-task-grip-move::after { inset: 15% 2px 15% auto; width: 3px; }
+}
+
+/* Tags tint task cards while retaining theme text and completion styles. */
+.planner-day-root .planner-time-block.planner-has-tag {
+  background: color-mix(in srgb, var(--planner-tag-colour) 18%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--planner-tag-colour) 65%, var(--background-modifier-border));
+  border-left-color: var(--planner-tag-colour);
+}
+.planner-day-root .planner-side-task.planner-has-tag {
+  border-inline-start: 3px solid var(--planner-tag-colour);
+  background: color-mix(in srgb, var(--planner-tag-colour) 10%, var(--background-primary));
+  padding-inline-start: 6px;
+}
+.planner-tag-picker, .planner-tag-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.planner-tag-picker > label { flex: 1 1 180px; min-width: 0; }
+.planner-tag-picker select { width: 100%; }
+.planner-tag-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+}
+.planner-tag-swatch[hidden] { display: none; }
+.planner-tag-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.planner-tag-name { flex: 1 1 120px; overflow-wrap: anywhere; }
+.planner-tag-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+.planner-tag-palette button.planner-tag-preset {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+}
+.planner-tag-preset:focus-visible { outline: 2px solid var(--text-normal); outline-offset: 2px; }
+.planner-tag-manager input[type="color"] { width: 64px; height: 34px; padding: 2px; }
+.planner-tag-pill {
+  grid-column: 2 / -1;
+  font-size: 10px;
+  color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -19,7 +19,7 @@ const DEFAULT_PLANNER_PATH = "planner.md";
 // ============================================
 
 // Planner data engine. The master Markdown file remains the source of truth.
-const PLANNER_META_PATTERN = /\s*\[(repeat|every|until|done|except|pid|time)::\s*([^\]]*)\]/gi;
+const PLANNER_META_PATTERN = /\s*\[(repeat|every|until|done|except|pid|time|tag)::\s*([^\]]*)\]/gi;
 const PLANNER_DATE_PATTERNS = [
     /^\*\*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\*\*\s*$/,
     /^#{2,3}\s*(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})\s*$/
@@ -222,7 +222,7 @@ class PlannerParser {
         const task = {
             text: title, completed: checkbox ? checkbox[1].toLowerCase() === "x" : false,
             line: lineNum, sourceLine: lineNum, sourceDate: dateKey, sourcePath, rawLine: line,
-            id: meta.pid || null, recurrence, every, until,
+            id: meta.pid || null, tagId: meta.tag || null, recurrence, every, until,
             doneDates: plannerDateList(meta.done), exceptions: plannerDateList(meta.except),
             startMinutes, endMinutes, timeTokens, hasRange: !!range,
             fromDate: range ? range.fromDate : null, toDate: range ? range.toDate : null,
@@ -411,6 +411,11 @@ class PlannerParser {
             if (done.length) line += ` [done:: ${done.join(", ")}]`;
             if (except.length) line += ` [except:: ${except.join(", ")}]`;
         }
+        const tagId = model.tagId === undefined ? original?.tagId : model.tagId;
+        if (tagId) {
+            if (!/^[a-zA-Z0-9_-]{1,128}$/.test(tagId)) throw new Error("Tag reference is invalid.");
+            line += " [tag:: " + tagId + "]";
+        }
         return line + ` [pid:: ${original?.id || this.newTaskId()}]`;
     }
     async saveTask(date, model, original = null) {
@@ -527,6 +532,85 @@ class PlannerParser {
             }
             return lines.join("\n");
         });
+    }
+}
+
+const PLANNER_TAG_PATH = "CalendarPlanner/tags.json";
+const PLANNER_TAG_COLOURS = ["#4F7CAC", "#8B5CF6", "#19876B", "#B65F25", "#B84568", "#6B7280"];
+
+function plannerValidateTags(content) {
+    const data = JSON.parse(content);
+    if (data?.schemaVersion !== 1 || !Array.isArray(data.tags)) throw new Error("Unsupported or invalid tag file.");
+    const ids = new Set();
+    for (const tag of data.tags) {
+        if (!tag || typeof tag.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(tag.id) || ids.has(tag.id) ||
+            typeof tag.name !== "string" || !tag.name.trim() || tag.name.length > 80 ||
+            /[\r\n]/.test(tag.name) || !/^#[0-9a-f]{6}$/i.test(tag.colour) ||
+            typeof tag.archived !== "boolean") throw new Error("Invalid or duplicate tag definition.");
+        ids.add(tag.id);
+    }
+    return data;
+}
+
+// Stable IDs can also be referenced by future stopwatch sessions.
+class PlannerTagRepository {
+    constructor(app) {
+        this.app = app;
+        this.tags = [];
+        this.pendingWrite = Promise.resolve();
+        this.readVersion = 0;
+    }
+    get(id) { return this.tags.find(tag => tag.id === id); }
+    async load() {
+        const version = ++this.readVersion;
+        const file = this.app.vault.getAbstractFileByPath(PLANNER_TAG_PATH);
+        if (file && !(file instanceof obsidian.TFile)) throw new Error("The tag path must be a file.");
+        const tags = file ? plannerValidateTags(await this.app.vault.read(file)).tags : [];
+        if (version === this.readVersion) this.tags = tags;
+    }
+    saveTag(model, original = null) {
+        const name = String(model.name || "").trim();
+        if (!name || name.length > 80 || /[\r\n]/.test(name)) return Promise.reject(new Error("Choose a tag name of 1–80 characters."));
+        if (!/^#[0-9a-f]{6}$/i.test(model.colour)) return Promise.reject(new Error("Choose a valid colour."));
+        const next = {
+            ...original, id: original?.id || "tag_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10),
+            name, colour: model.colour.toUpperCase(), archived: !!model.archived
+        };
+        const write = this.pendingWrite.then(async () => {
+            const vault = this.app.vault;
+            let file = vault.getAbstractFileByPath(PLANNER_TAG_PATH);
+            if (!file) {
+                if (!vault.getAbstractFileByPath("CalendarPlanner")) {
+                    try { await vault.createFolder("CalendarPlanner"); }
+                    catch (error) { if (!vault.getAbstractFileByPath("CalendarPlanner")) throw error; }
+                }
+                try { file = await vault.create(PLANNER_TAG_PATH, JSON.stringify({ schemaVersion: 1, tags: [] }, null, 2) + "\n"); }
+                catch (error) {
+                    file = vault.getAbstractFileByPath(PLANNER_TAG_PATH);
+                    if (!file) throw error;
+                }
+            }
+            if (!(file instanceof obsidian.TFile)) throw new Error("The tag path must be a file.");
+            const update = content => {
+                const data = plannerValidateTags(content);
+                const index = data.tags.findIndex(tag => tag.id === next.id);
+                if (original && (index < 0 || JSON.stringify(data.tags[index]) !== JSON.stringify(original))) {
+                    throw new Error("This tag changed. Reopen Manage tags and try again.");
+                }
+                if (data.tags.some(tag => tag.id !== next.id && tag.name.trim().toLowerCase() === name.toLowerCase())) {
+                    throw new Error("A tag with that name already exists.");
+                }
+                if (index < 0) data.tags.push(next);
+                else data.tags[index] = next;
+                return JSON.stringify(data, null, 2) + "\n";
+            };
+            if (typeof vault.process === "function") await vault.process(file, update);
+            else await vault.modify(file, update(await vault.read(file)));
+            await this.load();
+            return next;
+        });
+        this.pendingWrite = write.catch(() => {});
+        return write;
     }
 }
 
@@ -4272,6 +4356,107 @@ function plannerDragTimeRange(anchorMinute, cursorMinute, step = 15) {
     return { start, end };
 }
 
+function plannerTagLabel(repository, id) {
+    const tag = repository.get(id);
+    return tag ? tag.name + (tag.archived ? " (archived)" : "") : "Missing tag (" + id + ")";
+}
+
+function plannerApplyTaskTag(node, task, repository) {
+    if (!task.tagId) return;
+    const tag = repository.get(task.tagId);
+    const label = plannerTagLabel(repository, task.tagId);
+    node.title += " · " + label;
+    if (tag) {
+        node.addClass("planner-has-tag");
+        node.style.setProperty("--planner-tag-colour", tag.colour);
+    }
+}
+
+class PlannerTagManagerModal extends obsidian.Modal {
+    constructor(plugin, onChange = () => {}) {
+        super(plugin.app);
+        this.plugin = plugin;
+        this.onChange = onChange;
+        this.editing = null;
+        this.busy = false;
+        this.createdTagId = null;
+    }
+    onOpen() { this.render(); }
+    onClose() { this.onChange(this.createdTagId); }
+    render() {
+        const root = this.contentEl;
+        root.empty();
+        root.addClass("planner-tag-manager");
+        this.titleEl.setText("Manage tags");
+        const list = plannerEl(root, "div", "planner-tag-list");
+        const repository = this.plugin.tags;
+        if (!repository.tags.length) plannerEl(list, "p", "planner-muted", "Create a tag to colour your tasks.");
+        for (const tag of repository.tags) {
+            const row = plannerEl(list, "div", "planner-tag-row");
+            const swatch = plannerEl(row, "span", "planner-tag-swatch");
+            swatch.style.backgroundColor = tag.colour;
+            plannerEl(row, "span", "planner-tag-name", plannerTagLabel(repository, tag.id));
+            const edit = plannerEl(row, "button", "planner-ui-btn", "Edit");
+            edit.type = "button";
+            edit.addEventListener("click", () => {
+                if (this.busy) return;
+                this.editing = tag;
+                this.render();
+            });
+            const archive = plannerEl(row, "button", "planner-ui-btn", tag.archived ? "Restore" : "Archive");
+            archive.type = "button";
+            archive.addEventListener("click", async () => {
+                if (this.busy) return;
+                this.busy = true;
+                archive.disabled = true;
+                try {
+                    await repository.saveTag({ ...tag, archived: !tag.archived }, tag);
+                    if (this.editing?.id === tag.id) this.editing = null;
+                    this.render();
+                    await this.plugin.refreshPlannerViews();
+                } catch (error) { new obsidian.Notice(error.message); }
+                finally { this.busy = false; archive.disabled = false; }
+            });
+        }
+        const form = plannerEl(root, "form", "planner-editor-form");
+        plannerEl(form, "h3", "", this.editing ? "Edit tag" : "Create tag");
+        const name = plannerField(form, "Name", "text", this.editing?.name || "", { required: "", maxlength: "80" });
+        const colour = plannerField(form, "Colour", "color", this.editing?.colour || PLANNER_TAG_COLOURS[0]);
+        const palette = plannerEl(form, "div", "planner-tag-palette");
+        for (const value of PLANNER_TAG_COLOURS) {
+            const preset = plannerEl(palette, "button", "planner-tag-preset");
+            preset.type = "button";
+            preset.style.backgroundColor = value;
+            preset.setAttribute("aria-label", "Use colour " + value);
+            preset.addEventListener("click", () => { colour.value = value; });
+        }
+        const actions = plannerEl(form, "div", "planner-editor-actions");
+        const save = plannerEl(actions, "button", "planner-ui-btn mod-cta", this.editing ? "Save tag" : "Create tag");
+        save.type = "submit";
+        if (this.editing) {
+            const cancel = plannerEl(actions, "button", "planner-ui-btn", "Cancel edit");
+            cancel.type = "button";
+            cancel.addEventListener("click", () => { if (!this.busy) { this.editing = null; this.render(); } });
+        }
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+            if (this.busy) return;
+            this.busy = true;
+            save.disabled = true;
+            try {
+                const tag = await repository.saveTag({
+                    name: name.value, colour: colour.value, archived: this.editing?.archived || false
+                }, this.editing);
+                if (!this.editing) this.createdTagId = tag.id;
+                this.editing = null;
+                this.render();
+                await this.plugin.refreshPlannerViews();
+            } catch (error) { new obsidian.Notice(error.message); }
+            finally { this.busy = false; save.disabled = false; }
+        });
+    }
+}
+
 class PlannerTaskEditorModal extends obsidian.Modal {
     constructor(plugin, date, task = null, defaults = {}) {
         super(plugin.app);
@@ -4295,6 +4480,35 @@ class PlannerTaskEditorModal extends obsidian.Modal {
         const form = plannerEl(contentEl, "form", "planner-editor-form");
         const title = plannerField(form, "Task", "text", this.task?.text || "", { placeholder: "What are you planning?", required: "" });
         title.maxLength = 500;
+        const tagRow = plannerEl(form, "div", "planner-tag-picker");
+        const tag = plannerField(tagRow, "Tag", "select");
+        const swatch = plannerEl(tagRow, "span", "planner-tag-swatch");
+        const updateTagOptions = (selected = tag.value) => {
+            tag.replaceChildren();
+            const none = plannerEl(tag, "option", "", "No tag");
+            none.value = "";
+            for (const entry of this.plugin.tags.tags.filter(entry => !entry.archived || entry.id === selected)) {
+                const option = plannerEl(tag, "option", "", plannerTagLabel(this.plugin.tags, entry.id));
+                option.value = entry.id;
+            }
+            if (selected && !this.plugin.tags.get(selected)) {
+                const missing = plannerEl(tag, "option", "", plannerTagLabel(this.plugin.tags, selected));
+                missing.value = selected;
+            }
+            tag.value = selected || "";
+            const colour = this.plugin.tags.get(tag.value)?.colour;
+            swatch.hidden = !colour;
+            swatch.style.backgroundColor = colour || "";
+            swatch.title = colour || "";
+        };
+        updateTagOptions(this.task?.tagId || "");
+        tag.addEventListener("change", () => updateTagOptions());
+        const manage = plannerEl(tagRow, "button", "planner-ui-btn", "Manage tags");
+        manage.type = "button";
+        manage.addEventListener("click", () => new PlannerTagManagerModal(this.plugin, createdId => {
+            updateTagOptions(createdId || tag.value);
+        }).open());
+
         const times = plannerEl(form, "div", "planner-form-pair");
         const start = plannerField(times, "Start time", "time", this.task?.startMinutes !== null && this.task?.startMinutes !== undefined
             ? plannerMinutesToTime(this.task.startMinutes) : this.defaults.startTime || "");
@@ -4353,7 +4567,7 @@ class PlannerTaskEditorModal extends obsidian.Modal {
                 this.saving = true; submit.disabled = true;
                 const taskDate = this.task ? window.moment(this.task.sourceDate) : this.date;
                 await this.parser.saveTask(taskDate, {
-                    text: title.value.trim(), startTime: start.value, endTime: end.value,
+                    text: title.value.trim(), tagId: tag.value, startTime: start.value, endTime: end.value,
                     repeat: repeat.value, every: Number(every.value), until: until.value,
                     multiDay: rangeToggle.checked, fromDate: fromDate.value, toDate: toDate.value
                 }, this.task);
@@ -4810,6 +5024,7 @@ class PlannerDayView extends obsidian.ItemView {
             block.style.left = `${wideBase ? 0 : position.lane / position.laneCount * 100}%`;
             block.style.width = `${wideBase ? 100 : 100 / position.laneCount}%`;
             block.title = `${date.format("ddd D MMM")}: ${plannerTaskTime(task)} ${task.text}${task.recurrence !== "none" ? ` (repeats ${task.recurrence})` : ""}`;
+            plannerApplyTaskTag(block, task, this.plugin.tags);
             // Multi-day columns need a full-width time row. Keeping it outside
             // the edit button prevents narrow columns from hiding the times.
             if (isMulti) {
@@ -4833,6 +5048,7 @@ class PlannerDayView extends obsidian.ItemView {
             // Single-day cards retain the original title-then-time layout.
             if (!isMulti) plannerEl(edit, "span", "planner-block-time", plannerTaskTime(task));
             edit.setAttribute("aria-label", `${task.text}, ${plannerTaskTime(task)}`);
+            if (task.tagId) edit.setAttribute("aria-label", edit.getAttribute("aria-label") + ", " + plannerTagLabel(this.plugin.tags, task.tagId));
             edit.addEventListener("click", () => this.openEditor(task, {}, date));
             if (task.recurrence !== "none") plannerEl(block, "span", "planner-block-repeating", "↻");
             if (plannerCanReschedule(task)) this.bindTaskManipulation(block, parent, task, isMulti);
@@ -4851,6 +5067,12 @@ class PlannerDayView extends obsidian.ItemView {
             edit.addEventListener("click", () => this.openEditor(task, {}, date));
             if (task.recurrence !== "none") plannerEl(row, "span", "planner-repeat-pill", "↻");
             if (task.hasRange) plannerEl(row, "span", "planner-range-pill", "Multi-day");
+            if (task.tagId) {
+                const label = plannerEl(row, "span", "planner-tag-pill", plannerTagLabel(this.plugin.tags, task.tagId));
+                label.title = label.textContent;
+                plannerApplyTaskTag(row, task, this.plugin.tags);
+            }
+
         }
         return filtered.length;
     }
@@ -4943,10 +5165,10 @@ class PlannerDayView extends obsidian.ItemView {
         const prevHorizontal = root.querySelector(".planner-day-scroll")?.scrollLeft;
         root.empty();
         root.addClass("planner-day-root");
-        root.setAttribute("data-planner-layout", "v3.7");
-        if (!this.warnedStaleStyles && window.getComputedStyle(root).getPropertyValue("--planner-styles-version").trim() !== "v3-7") {
+        root.setAttribute("data-planner-layout", "v3.8");
+        if (!this.warnedStaleStyles && window.getComputedStyle(root).getPropertyValue("--planner-styles-version").trim() !== "v3-8") {
             this.warnedStaleStyles = true;
-            console.warn("[Calendar Planner] main.js is v3.7 but styles.css is not. Update both files and reload Obsidian.");
+            console.warn("[Calendar Planner] main.js is v3.8 but styles.css is not. Update both files and reload Obsidian.");
             new obsidian.Notice("Calendar Planner: mismatched plugin styles. Update styles.css alongside main.js and reload Obsidian.", 8000);
         }
         if (typeof window.ResizeObserver === "function") {
@@ -4997,6 +5219,9 @@ class PlannerDayView extends obsidian.ItemView {
         hide.type = "button"; hide.setAttribute("aria-pressed", String(this.hideCompleted));
         hide.addEventListener("click", () => { this.hideCompleted = !this.hideCompleted; this.render(); });
         plannerIconButton(buttons, "file-text", "Open planner Markdown", () => this.plugin.openPlannerFile());
+        const tags = plannerEl(buttons, "button", "planner-ui-btn", "Tags");
+        tags.type = "button";
+        tags.addEventListener("click", () => new PlannerTagManagerModal(this.plugin).open());
         const add = plannerEl(buttons, "button", "planner-ui-btn mod-cta", "+ New task"); add.type = "button";
         add.title = this.spanDays === 7 ? "Add a task on the selected date (use each column's + to choose a day)" : "Add a task on the selected date";
         add.addEventListener("click", () => this.openEditor(null, {}, this.date));
@@ -5281,6 +5506,21 @@ class CalendarPlugin extends obsidian.Plugin {
     }
 
     async onload() {
+        this.tags = new PlannerTagRepository(this.app);
+        try { await this.tags.load(); }
+        catch (error) { new obsidian.Notice("Could not load planner tags. " + error.message); }
+        const reloadTags = async file => {
+            if (file.path !== PLANNER_TAG_PATH) return;
+            try {
+                await this.tags.load();
+                await this.refreshPlannerViews();
+            } catch (error) { new obsidian.Notice("Could not reload planner tags. " + error.message); }
+        };
+        for (const event of ["create", "modify", "delete"]) this.registerEvent(this.app.vault.on(event, reloadTags));
+        this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+            if (oldPath === PLANNER_TAG_PATH || file.path === PLANNER_TAG_PATH) reloadTags({ path: PLANNER_TAG_PATH });
+        }));
+        this.addCommand({ id: "manage-planner-tags", name: "Manage task tags", callback: () => new PlannerTagManagerModal(this).open() });
         this.register(settings.subscribe((value) => {
             this.options = value;
         }));

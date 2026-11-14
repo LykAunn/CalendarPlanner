@@ -144,6 +144,16 @@ A drag only opens the editor; it does **not** save a task until you submit the f
 
 Direct manipulation applies to timed, single-date, non-recurring tasks. Move tasks with indented Markdown to a different date in the planner file.
 
+### Task tags and colours
+
+Choose **Tags** in the timeline toolbar, or run **CalendarPlanner: Manage task tags** from the command palette. Create a tag with a name and a preset or custom colour.
+
+In the task editor, select a **Tag** to colour the task in Day, 3-day, and Week views. Choose **No tag** to remove it. Recurring tasks share their series tag. The tag name appears in task tooltips and beside unscheduled tasks.
+
+Rename or recolour a tag to update all associated tasks. Archive a tag to hide it from new assignments. Existing assignments and their colours remain available, and archived tags can be restored. Missing tag references appear in the editor and can be replaced or removed.
+
+Tasks store stable references such as `[tag:: tag_example]`. Definitions are stored in `CalendarPlanner/tags.json` in the vault. Sync this file alongside the planner to share colours between devices. Stable IDs are available for future stopwatch integration.
+
 ### Managing tasks
 
 The task editor supports a title, optional start/end times, recurrence settings, and a multi-day date range (for non-recurring entries). Leave both time fields empty for an unscheduled task.
