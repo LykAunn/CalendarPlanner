@@ -97,6 +97,8 @@
   display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start;
   background: transparent; border: 0; box-shadow: none;
   padding: 0; margin: 0; text-align: left; color: var(--text-normal); cursor: pointer;
+  height: auto; max-height: none; min-height: 0;
+  justify-content: flex-start;
   white-space: normal; overflow: hidden;
 }
 .planner-block-title { line-height: 1.25; font-size: 12px; overflow-wrap: anywhere; width: 100%; }
@@ -485,12 +487,10 @@
   overflow: hidden;
 }
 .planner-day-root .planner-multi-column .planner-block-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  display: block;
   overflow: hidden;
   white-space: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: normal;
   font-size: 11px;
   line-height: 1.25;
@@ -507,21 +507,8 @@
 }
 .planner-day-root .planner-multi-column .is-recurring > .planner-block-time { padding-right: 11px; }
 
-/* A medium-width card can use one line for the title, giving time priority. */
-@container planner-card (max-width: 112px) {
-  .planner-day-root .planner-multi-column button.planner-block-main .planner-block-title {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    overflow-wrap: normal;
-  }
-}
-/* Ultra-narrow overlapping cards: time and checkbox retain their own lines;
-   don't display one-letter-wide vertical title fragments. Full details are
-   available from the existing native tooltip and the task editor on click. */
+/* Narrow cards keep full-width titles below their time and checkbox. */
 @container planner-card (max-width: 62px) {
-  .planner-day-root .planner-multi-column button.planner-block-main .planner-block-title { white-space: nowrap; }
   .planner-day-root .planner-multi-column .planner-time-block > .planner-block-time {
     font-size: 8px;
     letter-spacing: -0.15px;
