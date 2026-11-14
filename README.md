@@ -129,11 +129,20 @@ For example, dragging from **12:00 to 13:30** opens the editor with **Start time
 
 - **Press `Esc` while dragging:** Cancels the range selection.
 
-- **Click an existing task:** Opens it for editing; dragging starts only on empty timeline space.
+- **Click an existing task:** Opens it for editing.
 
 - **Touchscreen:** Tap-to-create and scrolling are supported; drag-to-select is intended for mouse and stylus rather than finger gestures.
 
 A drag only opens the editor; it does **not** save a task until you submit the form. Time selections stay within one day, with **23:59** as the latest supported end time.
+
+### Moving and resizing tasks
+
+- Drag the body of a timed task to move it while keeping its duration. In the 3-day and week views, drop it in another date column to change the date.
+- Drag the top or bottom grip to change just the start or end time. Changes snap to 15-minute intervals, subject to the timeline bounds and minimum duration.
+- On touchscreens, use the grip on the right to move the task and the top or bottom grip to resize it. The rest of the card remains available for scrolling or opening the editor.
+- The preview saves when you drop it on the timeline. Press **Esc** or release outside the timeline to cancel.
+
+Direct manipulation applies to timed, single-date, non-recurring tasks. Move tasks with indented Markdown to a different date in the planner file.
 
 ### Managing tasks
 
@@ -267,7 +276,7 @@ Prefix an entry with a 24-hour start/end time:
 
 ```
 
-A task with only a start time (for example, `16:00 Reply to emails`) uses **60 minutes** when parsed into the timeline. For exact durations, provide both times or use the task editor. Times use 24-hour `HH:MM` notation.
+A task with only a start time (for example, `16:00 Reply to emails`) uses **60 minutes** when parsed into the timeline. For exact durations, provide both times or use the task editor. Times use 24-hour `HH:MM` notation. Use `24:00` as an end time for midnight at the end of a day.
 
 ### Multi-day entries
 

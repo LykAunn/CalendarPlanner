@@ -1,6 +1,6 @@
 /* Calendar Planner — Day View additions. Designed for Obsidian light/dark themes. */
 .planner-day-root {
-  --planner-styles-version: v3-5;
+  --planner-styles-version: v3-7;
   --planner-border: var(--background-modifier-border);
   --planner-hour-width: 64px;
   box-sizing: border-box;
@@ -679,4 +679,61 @@
 }
 #calendar-container .nav.svelte-1vwr9dd .title.svelte-1vwr9dd {
   min-width: 0;
+}
+
+/* Task movement uses the card on desktop and a dedicated grip on touch. */
+.planner-day-root .planner-task-movable,
+.planner-day-root .planner-task-movable button.planner-block-main { cursor: grab; }
+.planner-day-root .planner-task-dragging { opacity: .35; cursor: grabbing; }
+.planner-task-grip {
+  position: absolute;
+  z-index: 1;
+  touch-action: none;
+}
+.planner-task-grip-start,
+.planner-task-grip-end {
+  inset-inline-start: 36%;
+  inset-inline-end: 0;
+  height: min(10px, 30%);
+  cursor: ns-resize;
+}
+.planner-task-grip-start { top: 0; }
+.planner-task-grip-end { bottom: 0; }
+.planner-task-grip::after {
+  content: "";
+  position: absolute;
+  border-radius: 3px;
+  background: var(--text-accent);
+  pointer-events: none;
+}
+.planner-task-grip-start::after,
+.planner-task-grip-end::after {
+  inset-inline-start: 50%;
+  width: min(18px, 70%);
+  height: 2px;
+  transform: translateX(-50%);
+  opacity: 0;
+}
+.planner-task-grip-start::after { top: 1px; }
+.planner-task-grip-end::after { bottom: 1px; }
+.planner-task-movable:hover .planner-task-grip::after { opacity: .75; }
+.planner-task-grip-move { display: none; }
+.planner-task-preview .planner-drag-selection-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-inline-start: 0;
+  box-sizing: border-box;
+}
+@media (any-pointer: coarse) {
+  .planner-task-grip-start,
+  .planner-task-grip-end { height: min(14px, 30%); }
+  .planner-task-grip::after { opacity: .75; }
+  .planner-task-grip-move {
+    display: block;
+    inset-block: 30%;
+    inset-inline-end: 0;
+    width: min(22px, 42%);
+    cursor: grab;
+  }
+  .planner-task-grip-move::after { inset: 15% 2px 15% auto; width: 3px; }
 }
